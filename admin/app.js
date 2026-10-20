@@ -41,8 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (token) {
-    showDashboard();
-    // Load whitelist immediately on page load (don't wait for stats)
+    // Load whitelist immediately on page load
     loadWhitelist();
   }
 });
