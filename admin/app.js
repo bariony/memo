@@ -1,7 +1,7 @@
 let token = localStorage.getItem('memo_token');
 let allUsers = [];
+let editingPhone = null;
 
-// Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
   if (token) {
     showDashboard();
@@ -24,9 +24,7 @@ async function login() {
       body: JSON.stringify({ password })
     });
 
-    if (!res.ok) {
-      return alert('Senha inválida');
-    }
+    if (!res.ok) return alert('Senha inválida');
 
     const data = await res.json();
     token = data.token;
@@ -35,7 +33,6 @@ async function login() {
     showDashboard();
     loadDashboard();
   } catch (err) {
-    console.error('Login error:', err);
     alert('Erro ao fazer login');
   }
 }
@@ -49,7 +46,7 @@ function logout() {
 }
 
 // ============================================================================
-// UI VISIBILITY
+// UI
 // ============================================================================
 
 function showDashboard() {
@@ -63,7 +60,7 @@ function showLogin() {
 }
 
 // ============================================================================
-// DASHBOARD DATA
+// DATA
 // ============================================================================
 
 async function loadDashboard() {
@@ -72,7 +69,7 @@ async function loadDashboard() {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
-    if (!res.ok) throw new Error('Failed to load stats');
+    if (!res.ok) throw new Error('Failed');
 
     const stats = await res.json();
     document.getElementById('active-users').textContent = stats.active_users;
@@ -80,7 +77,6 @@ async function loadDashboard() {
 
     await loadWhitelist();
   } catch (err) {
-    console.error('Dashboard load error:', err);
     alert('Erro ao carregar dados');
   }
 }
@@ -91,13 +87,12 @@ async function loadWhitelist() {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
-    if (!res.ok) throw new Error('Failed to load whitelist');
+    if (!res.ok) throw new Error('Failed');
 
     const data = await res.json();
     allUsers = data.users;
     renderWhitelist(allUsers);
   } catch (err) {
-    console.error('Whitelist load error:', err);
     alert('Erro ao carregar usuários');
   }
 }
@@ -107,7 +102,7 @@ function renderWhitelist(users) {
   tbody.innerHTML = '';
 
   if (users.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 32px; color: var(--text-secondary);">Nenhum usuário cadastrado</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 40px; color: #999;">Nenhum usuário cadastrado</td></tr>';
     return;
   }
 
@@ -125,10 +120,8 @@ function renderWhitelist(users) {
       <td><span class="badge ${statusClass}">${statusText}</span></td>
       <td>
         <div class="table-actions">
-          ${user.status === 'active' ? `
-            <button class="btn-action" onclick="revokeUser('${user.phone_number}')">Revogar</button>
-          ` : ''}
-          <button class="btn-action" onclick="editUser('${user.phone_number}')">Editar</button>
+          ${user.status === 'active' ? `<button class="btn-action" onclick="revokeUser('${user.phone_number}')">Revogar</button>` : ''}
+          <button class="btn-action" onclick="openEditModal('${user.phone_number}')">Editar</button>
         </div>
       </td>
     `;
@@ -136,7 +129,53 @@ function renderWhitelist(users) {
 }
 
 // ============================================================================
-// USER MANAGEMENT
+// MODAL
+// ============================================================================
+
+function openEditModal(phone) {
+  const user = allUsers.find(u => u.phone_number === phone);
+  if (!user) return;
+
+  editingPhone = phone;
+  const dateStr = user.permitted_until.split('T')[0];
+  document.getElementById('edit-date-input').value = dateStr;
+
+  const [year, month, day] = dateStr.split('-');
+  document.getElementById('edit-current-date').textContent = `Data atual: ${day}/${month}/${year}`;
+
+  document.getElementById('edit-modal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal').classList.add('hidden');
+  editingPhone = null;
+}
+
+async function confirmEdit() {
+  const newDate = document.getElementById('edit-date-input').value;
+  if (!newDate || !editingPhone) return;
+
+  try {
+    const res = await fetch(`/admin/whitelist/${editingPhone}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ permitted_until: newDate })
+    });
+
+    if (!res.ok) throw new Error('Erro');
+
+    closeEditModal();
+    loadDashboard();
+  } catch (err) {
+    alert('Erro ao atualizar usuário');
+  }
+}
+
+// ============================================================================
+// ACTIONS
 // ============================================================================
 
 async function addUser() {
@@ -155,26 +194,22 @@ async function addUser() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({
-        phone,
-        permitted_until: correctedDate
-      })
+      body: JSON.stringify({ phone, permitted_until: correctedDate })
     });
 
-    if (!res.ok) throw new Error('Erro ao adicionar');
+    if (!res.ok) throw new Error('Erro');
 
     document.getElementById('new-phone').value = '';
     document.getElementById('new-expiry').value = '';
     loadDashboard();
-    alert('Usuário adicionado com sucesso!');
+    alert('Usuário adicionado!');
   } catch (err) {
-    console.error('Add user error:', err);
     alert('Erro ao adicionar usuário');
   }
 }
 
 async function revokeUser(phone) {
-  if (!confirm('Tem certeza que quer revogar o acesso deste usuário?')) return;
+  if (!confirm('Revogar acesso deste usuário?')) return;
 
   try {
     const res = await fetch(`/admin/whitelist/${phone}/revoke`, {
@@ -182,65 +217,25 @@ async function revokeUser(phone) {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
-    if (!res.ok) throw new Error('Erro ao revogar');
+    if (!res.ok) throw new Error('Erro');
 
     loadDashboard();
-    alert('Acesso revogado com sucesso!');
+    alert('Acesso revogado!');
   } catch (err) {
-    console.error('Revoke error:', err);
     alert('Erro ao revogar usuário');
   }
 }
 
-async function editUser(phone) {
-  const currentUser = allUsers.find(u => u.phone_number === phone);
-  if (!currentUser) return;
-
-  const dateStr = currentUser.permitted_until.split('T')[0];
-  const [year, month, day] = dateStr.split('-');
-  const currentFormatted = `${day}/${month}/${year}`;
-
-  const newDate = prompt(`Nova data de expiração (DD/MM/YYYY):\n\nData atual: ${currentFormatted}`);
-  if (!newDate) return;
-
-  try {
-    const [day, month, year] = newDate.split('/');
-    const formatted = `${year}-${month}-${day}`;
-
-    const res = await fetch(`/admin/whitelist/${phone}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ permitted_until: formatted })
-    });
-
-    if (!res.ok) throw new Error('Erro ao atualizar');
-
-    loadDashboard();
-    alert('Data atualizada com sucesso!');
-  } catch (err) {
-    console.error('Edit error:', err);
-    alert('Erro ao atualizar usuário');
-  }
-}
-
-// ============================================================================
-// SEARCH & FILTER
-// ============================================================================
-
 function filterTable() {
-  const searchInput = document.getElementById('search-input');
-  const searchTerm = searchInput.value.toLowerCase().trim();
+  const searchTerm = document.getElementById('search-input').value.toLowerCase();
 
-  if (searchTerm === '') {
+  if (!searchTerm) {
     renderWhitelist(allUsers);
     return;
   }
 
-  const filtered = allUsers.filter(user =>
-    user.phone_number.toLowerCase().includes(searchTerm)
+  const filtered = allUsers.filter(u =>
+    u.phone_number.toLowerCase().includes(searchTerm)
   );
 
   renderWhitelist(filtered);
