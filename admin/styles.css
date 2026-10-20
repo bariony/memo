@@ -187,6 +187,11 @@ body {
   font-size: 15px;
 }
 
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
 .btn-logout {
   display: flex;
   align-items: center;
@@ -647,6 +652,14 @@ body {
   .form-grid {
     grid-template-columns: 1fr 100px;
   }
+
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (max-width: 768px) {
@@ -718,6 +731,24 @@ body {
 
   .stat-big-value {
     font-size: 28px;
+  }
+
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-bar {
+    flex-direction: column;
+  }
+
+  .date-range {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .date-range input,
+  .date-range button {
+    flex: 1;
   }
 
   .analytics-section {
