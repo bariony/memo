@@ -87,4 +87,24 @@ router.get('/expenses', requireAuth, async (req, res) => {
   res.json({ data: result.rows });
 });
 
+// GET /admin/analytics/recent-messages?limit=5
+router.get('/recent-messages', requireAuth, async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit as string) || 5, 50);
+  const pool = getDatabase();
+
+  try {
+    const result = await pool.query(`
+      SELECT phone_number, message_text, created_at
+      FROM message_logs
+      ORDER BY created_at DESC
+      LIMIT $1
+    `, [limit]);
+
+    res.json({ messages: result.rows });
+  } catch (err) {
+    console.error('Failed to load recent messages:', err);
+    res.status(500).json({ error: 'Failed to load messages' });
+  }
+});
+
 export default router;

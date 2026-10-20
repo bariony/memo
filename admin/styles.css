@@ -1870,6 +1870,103 @@ body {
 }
 
 /* ============================================================================
+   TO-DO & MESSAGES LISTS
+   ============================================================================ */
+
+.todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.todo-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.todo-item:last-child {
+  border-bottom: none;
+}
+
+.todo-check {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.todo-label {
+  flex: 1;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+}
+
+.todo-item input:checked + .todo-label {
+  color: var(--color-text-tertiary);
+  text-decoration: line-through;
+}
+
+.messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.message-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-border);
+  align-items: flex-start;
+}
+
+.message-item:last-child {
+  border-bottom: none;
+}
+
+.message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-primary), #0066ff);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  flex-shrink: 0;
+}
+
+.message-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.message-phone {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+}
+
+.message-text {
+  font-size: var(--font-size-md);
+  color: var(--color-text-secondary);
+  word-break: break-word;
+  margin-bottom: 4px;
+}
+
+.message-time {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+
+/* ============================================================================
    UTILITIES
    ============================================================================ */
 

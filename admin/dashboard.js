@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (token) {
     setupFilterButtons();
     loadAnalytics(7);
+    loadRecentMessages();
   }
 });
 
@@ -80,6 +81,7 @@ async function loadAnalytics(days) {
     renderCharts(usersData.data || [], messagesData.data || [], tokensData, expensesData.data || []);
     updateKPIs(usersData.data || [], messagesData.data || [], tokensData);
     renderRankings(tokensData.byUser || []);
+    loadRecentMessages();
   } catch (err) {
     console.error('Analytics load error:', err);
   }
@@ -115,6 +117,7 @@ async function loadAnalyticsCustom(fromDate, toDate) {
     renderCharts(usersData.data || [], messagesData.data || [], tokensData, expensesData.data || []);
     updateKPIs(usersData.data || [], messagesData.data || [], tokensData);
     renderRankings(tokensData.byUser || []);
+    loadRecentMessages();
   } catch (err) {
     console.error('Custom analytics error:', err);
   }
@@ -364,6 +367,79 @@ function renderRankings(byUser) {
       <td>${formatNumber(u.tokens)}</td>
     `;
   });
+}
+
+// ============================================================================
+// RECENT MESSAGES
+// ============================================================================
+
+function loadRecentMessages() {
+  const token = localStorage.getItem('memo_token');
+
+  fetch('/admin/analytics/recent-messages?limit=5', {
+    headers: { 'Authorization': `Bearer ${token}` }
+  })
+    .then(r => r.json())
+    .then(data => {
+      renderRecentMessages(data.messages || []);
+    })
+    .catch(err => {
+      console.error('Failed to load recent messages:', err);
+      renderRecentMessages([]);
+    });
+}
+
+function renderRecentMessages(messages) {
+  const container = document.getElementById('recent-messages');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  if (!messages || messages.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; color: var(--color-text-tertiary); padding: 24px;">
+        Sem mensagens
+      </div>
+    `;
+    return;
+  }
+
+  messages.forEach(msg => {
+    const date = new Date(msg.created_at);
+    const timeAgo = formatTimeAgo(date);
+    const initials = msg.phone_number.substring(0, 2).toUpperCase();
+
+    const item = document.createElement('div');
+    item.className = 'message-item';
+    item.innerHTML = `
+      <div class="message-avatar">${initials}</div>
+      <div class="message-content">
+        <div class="message-phone">${msg.phone_number}</div>
+        <div class="message-text">${escapeHtml(msg.message_text.substring(0, 100))}</div>
+        <div class="message-time">${timeAgo}</div>
+      </div>
+    `;
+    container.appendChild(item);
+  });
+}
+
+function formatTimeAgo(date) {
+  const now = new Date();
+  const seconds = Math.floor((now - date) / 1000);
+
+  if (seconds < 60) return 'agora';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m atrás`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h atrás`;
+  const days = Math.floor(hours / 24);
+  return `${days}d atrás`;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 // ============================================================================
