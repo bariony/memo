@@ -62,9 +62,6 @@ export class ReminderService {
   }
 
   async initializeWorker(): Promise<void> {
-    const queue = await this.getQueue();
-    queue.process('send-reminder', async (job) => {
-      console.log('Processing reminder job:', job.data);
-    });
+    console.log('Reminder worker initialized (configured via separate worker file)');
   }
 }
