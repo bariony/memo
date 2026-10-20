@@ -17,4 +17,4 @@ COPY admin/ ./admin/
 
 EXPOSE 3000
 
-CMD ["node", "dist/main.js"]
+CMD ["sh", "-c", "npx tsx migrations/run.ts && node dist/main.js"]
