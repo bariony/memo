@@ -61,19 +61,19 @@ async function loadAnalytics(days) {
 
   try {
     const [usersData, messagesData, tokensData, expensesData] = await Promise.all([
-      fetch(`/admin/analytics/users?days=${days}`, {
+      fetch(`/admin/users?days=${days}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ data: [] })),
 
-      fetch(`/admin/analytics/messages?days=${days}`, {
+      fetch(`/admin/messages?days=${days}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ data: [] })),
 
-      fetch(`/admin/analytics/tokens?days=${days}`, {
+      fetch(`/admin/tokens?days=${days}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ total: 0, byUser: [] })),
 
-      fetch(`/admin/analytics/expenses?days=${days}`, {
+      fetch(`/admin/expenses?days=${days}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ data: [] }))
     ]);
@@ -97,19 +97,19 @@ async function loadAnalyticsCustom(fromDate, toDate) {
     const days = Math.ceil((to - from) / (1000 * 60 * 60 * 24));
 
     const [usersData, messagesData, tokensData, expensesData] = await Promise.all([
-      fetch(`/admin/analytics/users?days=${days}`, {
+      fetch(`/admin/users?days=${days}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ data: [] })),
 
-      fetch(`/admin/analytics/messages?days=${days}`, {
+      fetch(`/admin/messages?days=${days}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ data: [] })),
 
-      fetch(`/admin/analytics/tokens?days=${days}`, {
+      fetch(`/admin/tokens?days=${days}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ total: 0, byUser: [] })),
 
-      fetch(`/admin/analytics/expenses?days=${days}`, {
+      fetch(`/admin/expenses?days=${days}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ data: [] }))
     ]);
@@ -376,7 +376,7 @@ function renderRankings(byUser) {
 function loadRecentMessages() {
   const token = localStorage.getItem('memo_token');
 
-  fetch('/admin/analytics/recent-messages?limit=5', {
+  fetch('/admin/recent-messages?limit=5', {
     headers: { 'Authorization': `Bearer ${token}` }
   })
     .then(r => r.json())
