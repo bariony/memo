@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { MessageService } from '../services/message.service';
+import { MessageService } from '../services/message.service.js';
 
 const router = Router();
 const messageService = new MessageService();

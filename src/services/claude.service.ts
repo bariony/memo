@@ -1,6 +1,6 @@
 import axios from 'axios';
-import { getEnv } from '../config/env';
-import { Expense, ClaudeParseExpense } from '../types/index';
+import { getEnv } from '../config/env.js';
+import { Expense, ClaudeParseExpense } from '../types/index.js';
 
 const env = getEnv();
 

@@ -1,5 +1,5 @@
-import { getDatabase } from '../config/database';
-import { Expense } from '../types/index';
+import { getDatabase } from '../config/database.js';
+import { Expense } from '../types/index.js';
 
 export class ExpenseService {
   async logExpense(phone: string, amount: number, description: string): Promise<Expense> {

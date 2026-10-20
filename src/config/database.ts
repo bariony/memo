@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { getEnv } from './env';
+import { getEnv } from './env.js';
 
 const env = getEnv();
 let poolInstance: pg.Pool | null = null;

@@ -1,7 +1,7 @@
 import { Queue } from 'bullmq';
-import { getRedis } from '../config/redis';
-import { getDatabase } from '../config/database';
-import { Reminder } from '../types/index';
+import { getRedis } from '../config/redis.js';
+import { getDatabase } from '../config/database.js';
+import { Reminder } from '../types/index.js';
 
 export class ReminderService {
   private reminderQueue: Queue | null = null;

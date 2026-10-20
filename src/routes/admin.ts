@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { WhitelistService } from '../services/whitelist.service';
-import { requireAuth, generateAdminToken } from '../middleware/auth';
-import { getEnv } from '../config/env';
-import { getDatabase } from '../config/database';
+import { WhitelistService } from '../services/whitelist.service.js';
+import { requireAuth, generateAdminToken } from '../middleware/auth.js';
+import { getEnv } from '../config/env.js';
+import { getDatabase } from '../config/database.js';
 
 const router = Router();
 const whitelistService = new WhitelistService();

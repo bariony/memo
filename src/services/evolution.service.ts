@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getEnv } from '../config/env';
+import { getEnv } from '../config/env.js';
 
 const env = getEnv();
 

@@ -1,9 +1,9 @@
-import { ClaudeService } from './claude.service';
-import { WhitelistService } from './whitelist.service';
-import { ExpenseService } from './expense.service';
-import { ReminderService } from './reminder.service';
-import { EvolutionService } from './evolution.service';
-import { getDatabase } from '../config/database';
+import { ClaudeService } from './claude.service.js';
+import { WhitelistService } from './whitelist.service.js';
+import { ExpenseService } from './expense.service.js';
+import { ReminderService } from './reminder.service.js';
+import { EvolutionService } from './evolution.service.js';
+import { getDatabase } from '../config/database.js';
 
 export class MessageService {
   private claudeService = new ClaudeService();

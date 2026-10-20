@@ -2,11 +2,11 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getEnv } from './config/env';
-import { initializeReminderWorker } from './workers/reminder.worker';
-import webhookRoutes from './routes/webhook';
-import healthRoutes from './routes/health';
-import adminRoutes from './routes/admin';
+import { getEnv } from './config/env.js';
+import { initializeReminderWorker } from './workers/reminder.worker.js';
+import webhookRoutes from './routes/webhook.js';
+import healthRoutes from './routes/health.js';
+import adminRoutes from './routes/admin.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const env = getEnv();

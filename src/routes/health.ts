@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase } from '../config/database';
-import { getRedis } from '../config/redis';
+import { getDatabase } from '../config/database.js';
+import { getRedis } from '../config/redis.js';
 
 const router = Router();
 

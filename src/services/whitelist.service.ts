@@ -1,6 +1,6 @@
-import { getDatabase } from '../config/database';
-import { getRedis } from '../config/redis';
-import { WhitelistEntry } from '../types/index';
+import { getDatabase } from '../config/database.js';
+import { getRedis } from '../config/redis.js';
+import { WhitelistEntry } from '../types/index.js';
 
 export class WhitelistService {
   private readonly CACHE_TTL = 86400; // 24 hours in seconds

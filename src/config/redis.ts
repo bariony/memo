@@ -1,5 +1,5 @@
 import { createClient } from 'redis';
-import { getEnv } from './env';
+import { getEnv } from './env.js';
 
 const env = getEnv();
 let clientInstance: any = null;

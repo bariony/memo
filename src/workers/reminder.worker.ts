@@ -1,7 +1,7 @@
 import { Worker, Queue } from 'bullmq';
-import { getRedis } from '../config/redis';
-import { getDatabase } from '../config/database';
-import { EvolutionService } from '../services/evolution.service';
+import { getRedis } from '../config/redis.js';
+import { getDatabase } from '../config/database.js';
+import { EvolutionService } from '../services/evolution.service.js';
 
 export async function initializeReminderWorker() {
   const redis = await getRedis();
