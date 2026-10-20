@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Memo • Sistema de Gestão</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <!-- LOGIN PAGE -->
@@ -81,6 +82,78 @@
 
       <!-- CONTENT -->
       <div class="app-content">
+        <!-- ANALYTICS SECTION -->
+        <section class="analytics-section">
+          <!-- PERIOD FILTER -->
+          <div class="filter-bar">
+            <label>Período:</label>
+            <button class="filter-btn active" data-days="7">7 dias</button>
+            <button class="filter-btn" data-days="30">30 dias</button>
+            <button class="filter-btn" data-days="90">90 dias</button>
+            <div class="date-range">
+              <input type="date" id="from-date">
+              <input type="date" id="to-date">
+              <button class="btn btn-primary btn-sm">Filtrar</button>
+            </div>
+          </div>
+
+          <!-- KPI CARDS -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <h4>Total de Usuários</h4>
+              <p class="kpi-value" id="total-users">-</p>
+            </div>
+            <div class="kpi-card">
+              <h4>Novos (período)</h4>
+              <p class="kpi-value" id="new-users">-</p>
+            </div>
+            <div class="kpi-card">
+              <h4>Mensagens</h4>
+              <p class="kpi-value" id="total-messages">-</p>
+            </div>
+            <div class="kpi-card">
+              <h4>Tokens</h4>
+              <p class="kpi-value" id="total-tokens">-</p>
+            </div>
+          </div>
+
+          <!-- CHARTS -->
+          <div class="charts-grid">
+            <div class="chart-card">
+              <h3>Evolução de Usuários</h3>
+              <canvas id="users-chart"></canvas>
+            </div>
+            <div class="chart-card">
+              <h3>Mensagens Processadas</h3>
+              <canvas id="messages-chart"></canvas>
+            </div>
+            <div class="chart-card">
+              <h3>Tokens Consumidos</h3>
+              <canvas id="tokens-chart"></canvas>
+            </div>
+            <div class="chart-card">
+              <h3>Gastos</h3>
+              <canvas id="expenses-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- RANKINGS -->
+          <div class="rankings-grid">
+            <div class="ranking-card">
+              <h3>Top Usuários (Tokens)</h3>
+              <table class="ranking-table">
+                <thead>
+                  <tr>
+                    <th>Usuário</th>
+                    <th>Tokens</th>
+                  </tr>
+                </thead>
+                <tbody id="tokens-ranking"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <!-- STATS -->
         <div class="stats-grid">
           <div class="stat-card">
@@ -215,5 +288,6 @@
   </div>
 
   <script src="app.js"></script>
+  <script src="dashboard.js"></script>
 </body>
 </html>
