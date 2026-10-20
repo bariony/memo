@@ -1,9 +1,17 @@
 let token = localStorage.getItem('memo_token');
+let allUsers = [];
 
-if (token) {
-  showDashboard();
-  loadDashboard();
-}
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+  if (token) {
+    showDashboard();
+    loadDashboard();
+  }
+});
+
+// ============================================================================
+// AUTH
+// ============================================================================
 
 async function login() {
   const password = document.getElementById('password').value;
@@ -27,9 +35,36 @@ async function login() {
     showDashboard();
     loadDashboard();
   } catch (err) {
+    console.error('Login error:', err);
     alert('Erro ao fazer login');
   }
 }
+
+function logout() {
+  localStorage.removeItem('memo_token');
+  token = null;
+  allUsers = [];
+  showLogin();
+  location.reload();
+}
+
+// ============================================================================
+// UI VISIBILITY
+// ============================================================================
+
+function showDashboard() {
+  document.getElementById('login-section').classList.add('hidden');
+  document.getElementById('dashboard-section').classList.remove('hidden');
+}
+
+function showLogin() {
+  document.getElementById('login-section').classList.remove('hidden');
+  document.getElementById('dashboard-section').classList.add('hidden');
+}
+
+// ============================================================================
+// DASHBOARD DATA
+// ============================================================================
 
 async function loadDashboard() {
   try {
@@ -37,12 +72,15 @@ async function loadDashboard() {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
+    if (!res.ok) throw new Error('Failed to load stats');
+
     const stats = await res.json();
     document.getElementById('active-users').textContent = stats.active_users;
     document.getElementById('total-expenses').textContent = stats.total_expenses;
 
     await loadWhitelist();
   } catch (err) {
+    console.error('Dashboard load error:', err);
     alert('Erro ao carregar dados');
   }
 }
@@ -53,35 +91,53 @@ async function loadWhitelist() {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
+    if (!res.ok) throw new Error('Failed to load whitelist');
+
     const data = await res.json();
-    const tbody = document.getElementById('whitelist-body');
-    tbody.innerHTML = '';
-
-    data.users.forEach((user) => {
-      const row = tbody.insertRow();
-      const dateStr = user.permitted_until.split('T')[0]; // pega só YYYY-MM-DD
-      const [year, month, day] = dateStr.split('-');
-      const date = `${day}/${month}/${year}`;
-      const statusClass = user.status === 'active' ? 'status-active' : 'status-revoked';
-
-      row.innerHTML = `
-        <td>${user.phone_number}</td>
-        <td>${date}</td>
-        <td><span class="${statusClass}">${user.status}</span></td>
-        <td>
-          <div class="action-buttons">
-            ${user.status === 'active' ? `
-              <button onclick="revokeUser('${user.phone_number}')">Revogar</button>
-            ` : ''}
-            <button onclick="editUser('${user.phone_number}')">Editar</button>
-          </div>
-        </td>
-      `;
-    });
+    allUsers = data.users;
+    renderWhitelist(allUsers);
   } catch (err) {
-    console.error('Erro ao carregar whitelist:', err);
+    console.error('Whitelist load error:', err);
+    alert('Erro ao carregar usuários');
   }
 }
+
+function renderWhitelist(users) {
+  const tbody = document.getElementById('whitelist-body');
+  tbody.innerHTML = '';
+
+  if (users.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 32px; color: var(--text-secondary);">Nenhum usuário cadastrado</td></tr>';
+    return;
+  }
+
+  users.forEach((user) => {
+    const dateStr = user.permitted_until.split('T')[0];
+    const [year, month, day] = dateStr.split('-');
+    const formattedDate = `${day}/${month}/${year}`;
+    const statusClass = user.status === 'active' ? 'active' : 'revoked';
+    const statusText = user.status === 'active' ? 'Ativo' : 'Revogado';
+
+    const row = tbody.insertRow();
+    row.innerHTML = `
+      <td>${user.phone_number}</td>
+      <td>${formattedDate}</td>
+      <td><span class="badge ${statusClass}">${statusText}</span></td>
+      <td>
+        <div class="table-actions">
+          ${user.status === 'active' ? `
+            <button class="btn-action" onclick="revokeUser('${user.phone_number}')">Revogar</button>
+          ` : ''}
+          <button class="btn-action" onclick="editUser('${user.phone_number}')">Editar</button>
+        </div>
+      </td>
+    `;
+  });
+}
+
+// ============================================================================
+// USER MANAGEMENT
+// ============================================================================
 
 async function addUser() {
   const phone = document.getElementById('new-phone').value;
@@ -90,7 +146,6 @@ async function addUser() {
   if (!phone || !expiry) return alert('Preencha todos os campos');
 
   try {
-    // Corrige timezone: pega a data do input e ajusta
     const d = new Date(expiry + 'T00:00:00');
     const correctedDate = new Date(d.getTime() + d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
@@ -113,12 +168,13 @@ async function addUser() {
     loadDashboard();
     alert('Usuário adicionado com sucesso!');
   } catch (err) {
+    console.error('Add user error:', err);
     alert('Erro ao adicionar usuário');
   }
 }
 
 async function revokeUser(phone) {
-  if (!confirm('Tem certeza que quer revogar?')) return;
+  if (!confirm('Tem certeza que quer revogar o acesso deste usuário?')) return;
 
   try {
     const res = await fetch(`/admin/whitelist/${phone}/revoke`, {
@@ -126,19 +182,28 @@ async function revokeUser(phone) {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
-    if (!res.ok) throw new Error('Erro');
+    if (!res.ok) throw new Error('Erro ao revogar');
+
     loadDashboard();
+    alert('Acesso revogado com sucesso!');
   } catch (err) {
+    console.error('Revoke error:', err);
     alert('Erro ao revogar usuário');
   }
 }
 
 async function editUser(phone) {
-  const newDate = prompt('Nova data de expiração (DD/MM/YYYY):');
+  const currentUser = allUsers.find(u => u.phone_number === phone);
+  if (!currentUser) return;
+
+  const dateStr = currentUser.permitted_until.split('T')[0];
+  const [year, month, day] = dateStr.split('-');
+  const currentFormatted = `${day}/${month}/${year}`;
+
+  const newDate = prompt(`Nova data de expiração (DD/MM/YYYY):\n\nData atual: ${currentFormatted}`);
   if (!newDate) return;
 
   try {
-    // Converte DD/MM/YYYY para YYYY-MM-DD
     const [day, month, year] = newDate.split('/');
     const formatted = `${year}-${month}-${day}`;
 
@@ -151,27 +216,32 @@ async function editUser(phone) {
       body: JSON.stringify({ permitted_until: formatted })
     });
 
-    if (!res.ok) throw new Error('Erro');
+    if (!res.ok) throw new Error('Erro ao atualizar');
+
     loadDashboard();
-    alert('Data atualizada!');
+    alert('Data atualizada com sucesso!');
   } catch (err) {
-    alert('Erro ao atualizar');
+    console.error('Edit error:', err);
+    alert('Erro ao atualizar usuário');
   }
 }
 
-function logout() {
-  localStorage.removeItem('memo_token');
-  token = null;
-  showLogin();
-  location.reload();
-}
+// ============================================================================
+// SEARCH & FILTER
+// ============================================================================
 
-function showDashboard() {
-  document.getElementById('login-section').classList.add('hidden');
-  document.getElementById('dashboard-section').classList.remove('hidden');
-}
+function filterTable() {
+  const searchInput = document.getElementById('search-input');
+  const searchTerm = searchInput.value.toLowerCase().trim();
 
-function showLogin() {
-  document.getElementById('login-section').classList.remove('hidden');
-  document.getElementById('dashboard-section').classList.add('hidden');
+  if (searchTerm === '') {
+    renderWhitelist(allUsers);
+    return;
+  }
+
+  const filtered = allUsers.filter(user =>
+    user.phone_number.toLowerCase().includes(searchTerm)
+  );
+
+  renderWhitelist(filtered);
 }
