@@ -9,7 +9,23 @@
 </head>
 <body>
 
-<div class="shell">
+<!-- ── LOGIN ── -->
+<div id="login-section" class="login-page">
+  <form class="modal" id="login-form" onsubmit="event.preventDefault(); login();" style="width: 340px;">
+    <div class="logo" style="justify-content: center; margin-bottom: 8px;">
+      <div class="logo-icon">M</div>
+      <span class="logo-text">Memo</span>
+    </div>
+    <div class="modal-sub" style="text-align: center; margin-bottom: 20px;">Painel de Administração</div>
+    <div class="field">
+      <label class="field-label">Senha de Acesso</label>
+      <input class="field-input" id="password" type="password" placeholder="Digite sua senha" required autocomplete="current-password"/>
+    </div>
+    <button class="btn btn-primary" type="submit" style="width: 100%; justify-content: center; margin-top: 8px;">Acessar</button>
+  </form>
+</div>
+
+<div class="shell hidden" id="dashboard-section">
 
   <!-- ── SIDEBAR ── -->
   <aside class="sidebar">

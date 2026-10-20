@@ -1287,3 +1287,24 @@ tbody tr:hover {
     font-size: 13px;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════
+   LOGIN PAGE
+════════════════════════════════════════════════════════════════ */
+
+.hidden {
+  display: none !important;
+}
+
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: var(--bg);
+}
+
+.login-page .modal {
+  width: 340px;
+  animation: fadeUp 0.2s ease;
+}

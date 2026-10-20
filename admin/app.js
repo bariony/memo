@@ -41,8 +41,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (token) {
-    // Load whitelist immediately on page load
+    showDashboard();
     loadWhitelist();
+  } else {
+    showLogin();
   }
 });
 

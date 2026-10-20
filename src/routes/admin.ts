@@ -21,8 +21,8 @@ router.post('/admin/auth', (req: Request, res: Response) => {
 });
 
 // Get whitelist
-router.get('/admin/whitelist', (req: Request, res: Response) => {
-  // Return mock data immediately (no auth, no async, no db)
+router.get('/admin/whitelist', requireAuth, (req: Request, res: Response) => {
+  // TODO: Connect to real database when migrations are complete
   return res.json({
     users: [
       {
@@ -79,8 +79,8 @@ router.patch('/admin/whitelist/:phone', requireAuth, async (req: Request, res: R
 });
 
 // Dashboard stats
-router.get('/admin/stats', (req: Request, res: Response) => {
-  // Return mock data immediately (no auth, no async, no db)
+router.get('/admin/stats', requireAuth, (req: Request, res: Response) => {
+  // TODO: Connect to real database when migrations are complete
   return res.json({
     active_users: 1,
     total_expenses: 0
