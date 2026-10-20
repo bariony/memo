@@ -1,0 +1,67 @@
+import { ClaudeService } from './claude.service';
+import { WhitelistService } from './whitelist.service';
+import { ExpenseService } from './expense.service';
+import { ReminderService } from './reminder.service';
+import { EvolutionService } from './evolution.service';
+import { getDatabase } from '../config/database';
+
+export class MessageService {
+  private claudeService = new ClaudeService();
+  private whitelistService = new WhitelistService();
+  private expenseService = new ExpenseService();
+  private reminderService = new ReminderService();
+  private evolutionService = new EvolutionService();
+
+  async processMessage(phone: string, messageText: string): Promise<string> {
+    try {
+      // 1. Validate whitelist
+      const access = await this.whitelistService.validateAccess(phone);
+      if (!access.authorized) {
+        const msg = access.reason === 'expired'
+          ? 'Sua licença expirou. Para não perder seu histórico de gastos, fale com Igor para renovar.'
+          : 'Você precisa falar com o administrador do sistema: (11) 986683737';
+
+        await this.evolutionService.sendMessage(phone, msg);
+        return msg;
+      }
+
+      // 2. Ensure user exists
+      const pool = getDatabase();
+      await pool.query(
+        'INSERT INTO users (phone_number) VALUES ($1) ON CONFLICT DO NOTHING',
+        [phone]
+      );
+
+      // 3. Detect intent
+      const intent = await this.claudeService.detectIntent(messageText);
+
+      let response: string;
+
+      if (intent === 'expense_log') {
+        const parsed = await this.claudeService.parseExpense(messageText);
+        await this.expenseService.logExpense(phone, parsed.amount, parsed.description);
+        response = `✓ Registrado: R$${parsed.amount} em ${parsed.description}`;
+      } else if (intent === 'expense_query') {
+        const expenses = await this.expenseService.getRecentExpenses(phone, 7);
+        response = await this.claudeService.formatExpenseQuery(expenses, messageText);
+      } else if (intent === 'reminder_set') {
+        response = 'Lembrete agendado!';
+      } else {
+        response = await this.claudeService.answerGeneralQuestion(messageText);
+      }
+
+      // Send response
+      await this.evolutionService.sendMessage(phone, response);
+      return response;
+    } catch (error) {
+      console.error('Message processing error:', error);
+      const errorMsg = 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente.';
+      try {
+        await this.evolutionService.sendMessage(phone, errorMsg);
+      } catch (e) {
+        console.error('Failed to send error message:', e);
+      }
+      throw error;
+    }
+  }
+}
