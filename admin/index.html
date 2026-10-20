@@ -233,10 +233,17 @@
     <form onsubmit="event.preventDefault(); addUser();" class="modal-fields">
       <div class="field">
         <label class="field-label">Número WhatsApp</label>
-        <input class="field-input" id="add-phone" type="tel" placeholder="11 99999-9999" required/>
+        <input class="field-input" id="add-phone" type="tel" placeholder="11 99999-9999" oninput="formatPhoneInput(this)" required/>
+        <small id="phone-error" style="color: #ef4444; display: none; font-size: 12px; margin-top: 4px;">Número inválido</small>
       </div>
       <div class="field">
-        <label class="field-label">Válido até</label>
+        <label class="field-label">Válido por</label>
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <button class="btn btn-duration" type="button" onclick="setDuration(1)">1 dia</button>
+          <button class="btn btn-duration" type="button" onclick="setDuration(7)">7 dias</button>
+          <button class="btn btn-duration" type="button" onclick="setDuration(15)">15 dias</button>
+          <button class="btn btn-duration" type="button" onclick="setDuration(30)">30 dias</button>
+        </div>
         <input class="field-input" id="add-expiry" type="date" required/>
       </div>
       <div class="modal-actions">

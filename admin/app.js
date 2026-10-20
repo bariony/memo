@@ -168,8 +168,8 @@ function renderWhitelist(users) {
       <td><span class="badge ${statusClass}">${statusText}</span></td>
       <td>
         <div class="table-actions">
-          ${user.status === 'active' ? `<button class="btn-action" onclick="revokeUser('${user.phone_number}')">Revogar</button>` : ''}
-          <button class="btn-action" onclick="openEditModal('${user.phone_number}')">Editar</button>
+          ${user.status === 'active' ? `<button class="btn-action revoke" onclick="revokeUser('${user.phone_number}')">Revogar</button>` : ''}
+          <button class="btn-action edit" onclick="openEditModal('${user.phone_number}')">Editar</button>
         </div>
       </td>
     `;
@@ -378,4 +378,57 @@ function updateCount() {
   if (countEl) {
     countEl.textContent = `${visible} usuário${visible !== 1 ? 's' : ''}`;
   }
+}
+
+// ============================================================================
+// PHONE FORMATTING & DURATION
+// ============================================================================
+
+function formatPhoneInput(input) {
+  let value = input.value.replace(/\D/g, '');
+
+  if (value.length > 11) {
+    value = value.substring(0, 11);
+  }
+
+  let formatted = '';
+  if (value.length > 0) formatted += value.substring(0, 2);
+  if (value.length > 2) formatted += ' ' + value.substring(2, 7);
+  if (value.length > 7) formatted += '-' + value.substring(7, 11);
+
+  input.value = formatted;
+
+  const errorEl = document.getElementById('phone-error');
+  if (value.length === 11 && !isValidPhone(value)) {
+    if (errorEl) errorEl.style.display = 'block';
+  } else {
+    if (errorEl) errorEl.style.display = 'none';
+  }
+}
+
+function isValidPhone(value) {
+  const phone = value.replace(/\D/g, '');
+  if (phone.length !== 11) return false;
+
+  const firstDigit = phone[0];
+  const secondDigit = phone[1];
+
+  if (firstDigit !== '1' && firstDigit !== '2') return false;
+  if (secondDigit === '0' || secondDigit === '1') return false;
+
+  return true;
+}
+
+function setDuration(days) {
+  const today = new Date();
+  const expiryDate = new Date(today.getTime() + days * 24 * 60 * 60 * 1000);
+
+  const year = expiryDate.getFullYear();
+  const month = String(expiryDate.getMonth() + 1).padStart(2, '0');
+  const day = String(expiryDate.getDate()).padStart(2, '0');
+
+  document.getElementById('add-expiry').value = `${year}-${month}-${day}`;
+
+  document.querySelectorAll('.btn-duration').forEach(btn => btn.classList.remove('active'));
+  event.target.classList.add('active');
 }
