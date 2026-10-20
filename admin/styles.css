@@ -441,13 +441,14 @@ body {
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: 1fr 200px 120px;
   gap: 16px;
   align-items: end;
 }
 
 .form-grid .btn {
-  padding: 12px 24px;
+  padding: 10px 16px;
+  height: fit-content;
 }
 
 .form-meta {
@@ -644,11 +645,7 @@ body {
   }
 
   .form-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .form-grid .btn {
-    width: 100%;
+    grid-template-columns: 1fr 100px;
   }
 }
 
