@@ -2,7 +2,38 @@ let token = localStorage.getItem('memo_token');
 let allUsers = [];
 let editingPhone = null;
 
+// ============================================================================
+// THEME MANAGEMENT
+// ============================================================================
+
+function initTheme() {
+  const savedTheme = localStorage.getItem('memo-theme') || 'light';
+  setTheme(savedTheme);
+}
+
+function setTheme(theme) {
+  if (theme === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    localStorage.setItem('memo-theme', 'dark');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem('memo-theme', 'light');
+  }
+}
+
+function toggleTheme() {
+  const currentTheme = document.documentElement.getAttribute('data-theme');
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  setTheme(newTheme);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  initTheme();
+  const themeToggle = document.getElementById('theme-toggle');
+  if (themeToggle) {
+    themeToggle.addEventListener('click', toggleTheme);
+  }
+
   if (token) {
     showDashboard();
     loadDashboard();
