@@ -151,6 +151,7 @@ function renderWhitelist(users) {
         </td>
       </tr>
     `;
+    updateCount();
     return;
   }
 
@@ -174,6 +175,8 @@ function renderWhitelist(users) {
       </td>
     `;
   });
+
+  updateCount();
 }
 
 // ============================================================================
