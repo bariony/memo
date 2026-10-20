@@ -21,20 +21,16 @@ router.post('/admin/auth', (req: Request, res: Response) => {
 });
 
 // Get whitelist
-router.get('/admin/whitelist', requireAuth, async (req: Request, res: Response) => {
-  try {
-    // TODO: Connect to real database when migrations are complete
-    // For now return mock data
-    res.json({ users: [
-      {
-        phone_number: '11986683737',
-        permitted_until: '2026-10-23',
-        status: 'active'
-      }
-    ] });
-  } catch (error) {
-    res.status(500).json({ error: String(error) });
-  }
+router.get('/admin/whitelist', requireAuth, (req: Request, res: Response) => {
+  // TODO: Connect to real database when migrations are complete
+  // For now return mock data immediately (no async)
+  res.json({ users: [
+    {
+      phone_number: '11986683737',
+      permitted_until: '2026-10-23',
+      status: 'active'
+    }
+  ] });
 });
 
 // Add user
