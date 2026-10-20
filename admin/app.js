@@ -42,7 +42,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (token) {
     showDashboard();
-    loadDashboard();
+    // Load whitelist immediately on page load (don't wait for stats)
+    loadWhitelist();
   }
 });
 
