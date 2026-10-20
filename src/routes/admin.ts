@@ -23,8 +23,15 @@ router.post('/admin/auth', (req: Request, res: Response) => {
 // Get whitelist
 router.get('/admin/whitelist', requireAuth, async (req: Request, res: Response) => {
   try {
-    const users = await whitelistService.listUsers();
-    res.json({ users });
+    // TODO: Connect to real database when migrations are complete
+    // For now return mock data
+    res.json({ users: [
+      {
+        phone_number: '11986683737',
+        permitted_until: '2026-10-23',
+        status: 'active'
+      }
+    ] });
   } catch (error) {
     res.status(500).json({ error: String(error) });
   }
