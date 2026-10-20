@@ -7,6 +7,7 @@ import { initializeReminderWorker } from './workers/reminder.worker.js';
 import webhookRoutes from './routes/webhook.js';
 import healthRoutes from './routes/health.js';
 import adminRoutes from './routes/admin.js';
+import analyticsRoutes from './routes/analytics.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const env = getEnv();
@@ -22,6 +23,7 @@ app.use(express.static(path.join(__dirname, '../admin')));
 app.use('/', webhookRoutes);
 app.use('/', healthRoutes);
 app.use('/', adminRoutes);
+app.use('/admin', analyticsRoutes);
 
 // Health check on root
 app.get('/', (req, res) => {
