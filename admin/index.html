@@ -25,7 +25,7 @@
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
         Dashboard
       </a>
-      <a href="#" class="nav-item" onclick="return false">
+      <a href="#" class="nav-item" onclick="event.preventDefault(); scrollToUsers()">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Usuários
         <span class="nav-badge" id="users-count">1</span>
@@ -182,33 +182,12 @@
           <div class="section-title">Gerenciamento de Usuários</div>
           <div class="section-sub">Controle de acesso e validade via WhatsApp</div>
         </div>
-        <button class="btn btn-primary" onclick="openModal()">
+        <button class="btn btn-primary" onclick="openAddModal()">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Adicionar Usuário
         </button>
       </div>
 
-      <!-- ADD USER CARD -->
-      <div class="add-user-card">
-        <div class="add-user-title">
-          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-          Acesso Rápido
-        </div>
-        <form onsubmit="event.preventDefault(); addUser();" class="add-user-grid">
-          <div class="field">
-            <label class="field-label">Número WhatsApp</label>
-            <input class="field-input" id="new-phone" type="tel" placeholder="11 99999-9999" required/>
-          </div>
-          <div class="field">
-            <label class="field-label">Válido até</label>
-            <input class="field-input" id="new-expiry" type="date" required/>
-          </div>
-          <button class="btn btn-primary" type="submit">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Adicionar
-          </button>
-        </form>
-      </div>
 
       <!-- USERS TABLE -->
       <div class="table-card">
@@ -246,7 +225,29 @@
   </div>
 </div>
 
-<!-- EDIT MODAL -->
+<!-- ADD USER MODAL -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal">
+    <div class="modal-title">Novo Usuário</div>
+    <div class="modal-sub">Adicionar acesso via WhatsApp</div>
+    <form onsubmit="event.preventDefault(); addUser();" class="modal-fields">
+      <div class="field">
+        <label class="field-label">Número WhatsApp</label>
+        <input class="field-input" id="add-phone" type="tel" placeholder="11 99999-9999" required/>
+      </div>
+      <div class="field">
+        <label class="field-label">Válido até</label>
+        <input class="field-input" id="add-expiry" type="date" required/>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" onclick="closeAddModal()">Cancelar</button>
+        <button class="btn btn-primary" type="submit">Adicionar Usuário</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- EDIT USER MODAL -->
 <div class="modal-overlay" id="edit-modal">
   <div class="modal">
     <div class="modal-title">Editar Usuário</div>

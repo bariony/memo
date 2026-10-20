@@ -180,6 +180,17 @@ function renderWhitelist(users) {
 // MODAL MANAGEMENT
 // ============================================================================
 
+function openAddModal() {
+  document.getElementById('add-modal').classList.add('open');
+  document.getElementById('add-phone').focus();
+}
+
+function closeAddModal() {
+  document.getElementById('add-modal').classList.remove('open');
+  document.getElementById('add-phone').value = '';
+  document.getElementById('add-expiry').value = '';
+}
+
 function openEditModal(phone) {
   const user = allUsers.find(u => u.phone_number === phone);
   if (!user) return;
@@ -187,15 +198,16 @@ function openEditModal(phone) {
   editingPhone = phone;
   const dateStr = user.permitted_until.split('T')[0];
   document.getElementById('edit-date-input').value = dateStr;
+  document.getElementById('edit-phone').value = phone;
 
   const [year, month, day] = dateStr.split('-');
   document.getElementById('edit-current-date').textContent = `Data atual: ${day}/${month}/${year}`;
 
-  document.getElementById('edit-modal').classList.remove('hidden');
+  document.getElementById('edit-modal').classList.add('open');
 }
 
 function closeEditModal() {
-  document.getElementById('edit-modal').classList.add('hidden');
+  document.getElementById('edit-modal').classList.remove('open');
   editingPhone = null;
 }
 
@@ -229,8 +241,8 @@ async function confirmEdit() {
 // ============================================================================
 
 async function addUser() {
-  const phone = document.getElementById('new-phone').value;
-  const expiry = document.getElementById('new-expiry').value;
+  const phone = document.getElementById('add-phone').value;
+  const expiry = document.getElementById('add-expiry').value;
 
   if (!phone || !expiry) {
     alert('Preencha todos os campos');
@@ -252,12 +264,13 @@ async function addUser() {
 
     if (!res.ok) throw new Error('Add user failed');
 
-    document.getElementById('new-phone').value = '';
-    document.getElementById('new-expiry').value = '';
+    document.getElementById('add-phone').value = '';
+    document.getElementById('add-expiry').value = '';
+    closeAddModal();
     loadDashboard();
-    alert('Usuário adicionado com sucesso');
+    showToast('✅ Usuário adicionado com sucesso!');
   } catch (err) {
-    alert('Erro ao adicionar usuário');
+    showToast('❌ Erro ao adicionar usuário', 'error');
     console.error(err);
   }
 }
@@ -300,6 +313,17 @@ function filterTable() {
 }
 
 // ============================================================================
+// UI NAVIGATION
+// ============================================================================
+
+function scrollToUsers() {
+  const tableCard = document.querySelector('.table-card');
+  if (tableCard) {
+    tableCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+// ============================================================================
 // TOAST & UI HELPERS
 // ============================================================================
 
@@ -330,16 +354,6 @@ function refreshData() {
   showToast('🔄 Dados atualizados!');
 }
 
-function openModal() {
-  const modal = document.getElementById('edit-modal');
-  if (modal) modal.classList.add('open');
-}
-
-function closeEditModal() {
-  const modal = document.getElementById('edit-modal');
-  if (modal) modal.classList.remove('open');
-  editingPhone = null;
-}
 
 function filterStatus(el, status) {
   document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
