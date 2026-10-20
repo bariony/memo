@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS token_usage (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_message_logs_phone_date ON message_logs(phone_number, created_at DESC);
-CREATE INDEX idx_token_usage_phone_date ON token_usage(phone_number, created_at DESC);
-CREATE INDEX idx_message_logs_date ON message_logs(created_at DESC);
-CREATE INDEX idx_token_usage_date ON token_usage(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_message_logs_phone_date ON message_logs(phone_number, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_token_usage_phone_date ON token_usage(phone_number, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_message_logs_date ON message_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_token_usage_date ON token_usage(created_at DESC);
