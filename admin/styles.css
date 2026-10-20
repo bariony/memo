@@ -140,6 +140,14 @@ h4 { font-size: 16px; font-weight: 600; line-height: 1.4; }
   color: var(--text-tertiary);
 }
 
+#login-form .form-group {
+  margin-bottom: 16px;
+}
+
+#login-form .form-group:last-child {
+  margin-bottom: 0;
+}
+
 /* ============================================================================
    FORM ELEMENTS
    ============================================================================ */
@@ -249,21 +257,27 @@ h4 { font-size: 16px; font-weight: 600; line-height: 1.4; }
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  padding: 10px 12px;
+  padding: 8px 12px;
   background: none;
   border: none;
   color: rgba(255, 255, 255, 0.7);
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 6px;
   transition: var(--transition);
+  height: auto;
 }
 
 .btn-logout:hover {
   background: rgba(255, 255, 255, 0.1);
   color: white;
+}
+
+.btn-logout svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* ============================================================================
