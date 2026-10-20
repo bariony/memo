@@ -27,8 +27,13 @@ function toggleTheme() {
   setTheme(newTheme);
 }
 
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
+
   const themeToggle = document.getElementById('theme-toggle');
   if (themeToggle) {
     themeToggle.addEventListener('click', toggleTheme);
@@ -41,12 +46,15 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ============================================================================
-// AUTH
+// AUTHENTICATION
 // ============================================================================
 
 async function login() {
   const password = document.getElementById('password').value;
-  if (!password) return alert('Digite a senha');
+  if (!password) {
+    alert('Digite a senha');
+    return;
+  }
 
   try {
     const res = await fetch('/admin/auth', {
@@ -55,7 +63,10 @@ async function login() {
       body: JSON.stringify({ password })
     });
 
-    if (!res.ok) return alert('Senha inválida');
+    if (!res.ok) {
+      alert('Senha inválida');
+      return;
+    }
 
     const data = await res.json();
     token = data.token;
@@ -65,19 +76,22 @@ async function login() {
     loadDashboard();
   } catch (err) {
     alert('Erro ao fazer login');
+    console.error(err);
   }
 }
 
 function logout() {
-  localStorage.removeItem('memo_token');
-  token = null;
-  allUsers = [];
-  showLogin();
-  location.reload();
+  if (confirm('Tem certeza que deseja sair?')) {
+    localStorage.removeItem('memo_token');
+    token = null;
+    allUsers = [];
+    showLogin();
+    location.reload();
+  }
 }
 
 // ============================================================================
-// UI
+// UI VISIBILITY
 // ============================================================================
 
 function showDashboard() {
@@ -91,7 +105,7 @@ function showLogin() {
 }
 
 // ============================================================================
-// DATA
+// DATA LOADING
 // ============================================================================
 
 async function loadDashboard() {
@@ -100,15 +114,11 @@ async function loadDashboard() {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
-    if (!res.ok) throw new Error('Failed');
-
-    const stats = await res.json();
-    document.getElementById('active-users').textContent = stats.active_users;
-    document.getElementById('total-expenses').textContent = stats.total_expenses;
+    if (!res.ok) throw new Error('Failed to load stats');
 
     await loadWhitelist();
   } catch (err) {
-    alert('Erro ao carregar dados');
+    console.error('Dashboard load error:', err);
   }
 }
 
@@ -118,13 +128,13 @@ async function loadWhitelist() {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
-    if (!res.ok) throw new Error('Failed');
+    if (!res.ok) throw new Error('Failed to load whitelist');
 
     const data = await res.json();
-    allUsers = data.users;
+    allUsers = data.users || [];
     renderWhitelist(allUsers);
   } catch (err) {
-    alert('Erro ao carregar usuários');
+    console.error('Whitelist load error:', err);
   }
 }
 
@@ -132,8 +142,14 @@ function renderWhitelist(users) {
   const tbody = document.getElementById('whitelist-body');
   tbody.innerHTML = '';
 
-  if (users.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 40px; color: #999;">Nenhum usuário cadastrado</td></tr>';
+  if (!users || users.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4" style="text-align: center; color: var(--color-text-tertiary); padding: 40px;">
+          Nenhum usuário cadastrado
+        </td>
+      </tr>
+    `;
     return;
   }
 
@@ -160,7 +176,7 @@ function renderWhitelist(users) {
 }
 
 // ============================================================================
-// MODAL
+// MODAL MANAGEMENT
 // ============================================================================
 
 function openEditModal(phone) {
@@ -196,24 +212,29 @@ async function confirmEdit() {
       body: JSON.stringify({ permitted_until: newDate })
     });
 
-    if (!res.ok) throw new Error('Erro');
+    if (!res.ok) throw new Error('Update failed');
 
     closeEditModal();
     loadDashboard();
+    alert('Data atualizada com sucesso');
   } catch (err) {
-    alert('Erro ao atualizar usuário');
+    alert('Erro ao atualizar data');
+    console.error(err);
   }
 }
 
 // ============================================================================
-// ACTIONS
+// USER MANAGEMENT
 // ============================================================================
 
 async function addUser() {
   const phone = document.getElementById('new-phone').value;
   const expiry = document.getElementById('new-expiry').value;
 
-  if (!phone || !expiry) return alert('Preencha todos os campos');
+  if (!phone || !expiry) {
+    alert('Preencha todos os campos');
+    return;
+  }
 
   try {
     const d = new Date(expiry + 'T00:00:00');
@@ -228,14 +249,15 @@ async function addUser() {
       body: JSON.stringify({ phone, permitted_until: correctedDate })
     });
 
-    if (!res.ok) throw new Error('Erro');
+    if (!res.ok) throw new Error('Add user failed');
 
     document.getElementById('new-phone').value = '';
     document.getElementById('new-expiry').value = '';
     loadDashboard();
-    alert('Usuário adicionado!');
+    alert('Usuário adicionado com sucesso');
   } catch (err) {
     alert('Erro ao adicionar usuário');
+    console.error(err);
   }
 }
 
@@ -248,12 +270,13 @@ async function revokeUser(phone) {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
-    if (!res.ok) throw new Error('Erro');
+    if (!res.ok) throw new Error('Revoke failed');
 
     loadDashboard();
-    alert('Acesso revogado!');
+    alert('Acesso revogado com sucesso');
   } catch (err) {
-    alert('Erro ao revogar usuário');
+    alert('Erro ao revogar acesso');
+    console.error(err);
   }
 }
 
