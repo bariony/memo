@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memo — Logs</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .logs-container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 20px;
+    }
+
+    .logs-header {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .filter-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .filter-group label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .filter-select, .filter-input {
+      height: 34px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+    }
+
+    .filter-select:focus, .filter-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.1);
+    }
+
+    .logs-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+    }
+
+    .stat-box {
+      padding: 12px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 12px;
+    }
+
+    .stat-box-label {
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .stat-box-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .stat-box.error .stat-box-value {
+      color: #ef4444;
+    }
+
+    .stat-box.warn .stat-box-value {
+      color: #f59e0b;
+    }
+
+    .logs-table {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .logs-table-head {
+      display: grid;
+      grid-template-columns: 120px 80px 200px 150px 1fr;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .logs-table-body {
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    .logs-table-row {
+      display: grid;
+      grid-template-columns: 120px 80px 200px 150px 1fr;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      align-items: flex-start;
+      transition: background 0.12s;
+    }
+
+    .logs-table-row:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .logs-table-row:last-child {
+      border-bottom: none;
+    }
+
+    .log-time {
+      color: var(--muted);
+      font-family: 'Menlo', monospace;
+      font-size: 11px;
+    }
+
+    .log-level {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 60px;
+      height: 24px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+
+    .log-level.error {
+      background: rgba(239, 68, 68, 0.15);
+      color: #ef4444;
+    }
+
+    .log-level.warn {
+      background: rgba(245, 158, 11, 0.15);
+      color: #f59e0b;
+    }
+
+    .log-level.info {
+      background: rgba(34, 197, 94, 0.15);
+      color: #22c55e;
+    }
+
+    .log-level.debug {
+      background: rgba(59, 130, 246, 0.15);
+      color: #3b82f6;
+    }
+
+    .log-context {
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--surface2);
+      padding: 2px 8px;
+      border-radius: 3px;
+      width: fit-content;
+    }
+
+    .log-message {
+      color: var(--text);
+      word-break: break-word;
+      line-height: 1.4;
+    }
+
+    .log-error {
+      color: #ef4444;
+      font-family: 'Menlo', monospace;
+      font-size: 11px;
+    }
+
+    .log-request-id {
+      color: var(--muted);
+      font-family: 'Menlo', monospace;
+      font-size: 10px;
+    }
+
+    .logs-empty {
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .logs-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .logs-pagination {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .pagination-btn {
+      padding: 4px 12px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.15s;
+    }
+
+    .pagination-btn:hover:not(:disabled) {
+      background: var(--surface3);
+      border-color: var(--border-hi);
+    }
+
+    .pagination-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .auto-refresh-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+    }
+
+    .loading {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    .error-message {
+      padding: 12px 16px;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      border-radius: 8px;
+      color: #ef4444;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="shell">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-icon">M</div>
+      <span class="logo-text">Memo</span>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-label">Geral</div>
+      <a href="index.html" class="nav-item">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </a>
+      <a href="index.html#" class="nav-item">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Usuários
+      </a>
+
+      <div class="nav-label" style="margin-top: 16px;">Admin</div>
+      <a href="logs.html" class="nav-item active">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        Logs
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-card">
+        <div class="avatar-sm">A</div>
+        <div class="user-info">
+          <div class="user-name">Admin</div>
+          <div class="user-role">Administrador</div>
+        </div>
+      </div>
+      <button class="logout-btn" onclick="logout()">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Sair
+      </button>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <div class="topbar-title">Logs do Sistema</div>
+        <div class="topbar-subtitle">Monitore erros, warnings e eventos</div>
+      </div>
+    </header>
+
+    <main class="content logs-container">
+      <!-- Error message -->
+      <div id="error-message" style="display: none;" class="error-message"></div>
+
+      <!-- Stats -->
+      <div class="logs-stats">
+        <div class="stat-box">
+          <div class="stat-box-label">Total de Logs</div>
+          <div class="stat-box-value" id="stat-total">0</div>
+        </div>
+        <div class="stat-box error">
+          <div class="stat-box-label">Erros</div>
+          <div class="stat-box-value" id="stat-errors">0</div>
+        </div>
+        <div class="stat-box warn">
+          <div class="stat-box-label">Warnings</div>
+          <div class="stat-box-value" id="stat-warns">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-box-label">Info</div>
+          <div class="stat-box-value" id="stat-info">0</div>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="logs-header">
+        <div class="filter-group">
+          <label>Level</label>
+          <select id="filter-level" class="filter-select" onchange="applyFilters()">
+            <option value="">Todos</option>
+            <option value="ERROR">Erros</option>
+            <option value="WARN">Warnings</option>
+            <option value="INFO">Info</option>
+            <option value="DEBUG">Debug</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label>Context</label>
+          <select id="filter-context" class="filter-select" onchange="applyFilters()">
+            <option value="">Todos</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label>Período (horas)</label>
+          <select id="filter-hours" class="filter-select" onchange="applyFilters()">
+            <option value="1">Última hora</option>
+            <option value="6">Últimas 6 horas</option>
+            <option value="24" selected>Últimas 24 horas</option>
+            <option value="168">Última semana</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label>Buscar</label>
+          <input type="text" id="filter-search" class="filter-input" placeholder="message, error, requestId..." onkeyup="applyFilters()">
+        </div>
+
+        <div class="filter-group" style="margin-left: auto;">
+          <input type="checkbox" id="auto-refresh" onchange="toggleAutoRefresh()">
+          <label for="auto-refresh" style="margin: 0; cursor: pointer;">Auto-atualizar (5s)</label>
+        </div>
+      </div>
+
+      <!-- Logs Table -->
+      <div class="logs-table">
+        <div class="logs-table-head">
+          <div>Hora</div>
+          <div>Level</div>
+          <div>Context</div>
+          <div>Request ID</div>
+          <div>Mensagem</div>
+        </div>
+        <div class="logs-table-body" id="logs-table-body">
+          <div class="logs-empty">Carregando logs...</div>
+        </div>
+      </div>
+
+      <!-- Pagination -->
+      <div class="logs-footer">
+        <div>
+          Mostrando <span id="showing-start">0</span>-<span id="showing-end">0</span> de <span id="total-count">0</span>
+        </div>
+        <div class="logs-pagination">
+          <button class="pagination-btn" id="btn-prev" onclick="previousPage()" disabled>← Anterior</button>
+          <span id="page-info">Página 1</span>
+          <button class="pagination-btn" id="btn-next" onclick="nextPage()" disabled>Próxima →</button>
+        </div>
+        <div class="auto-refresh-label">
+          <span id="last-updated">Nunca atualizado</span>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+  let currentPage = 1;
+  const limit = 50;
+  let autoRefreshInterval = null;
+  let allContexts = [];
+
+  async function loadStats() {
+    try {
+      const res = await fetch('/admin/logs/stats', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('memo_token')}` }
+      });
+      const data = await res.json();
+
+      if (data.success && data.stats) {
+        document.getElementById('stat-total').textContent = data.stats.total.toLocaleString('pt-BR');
+        document.getElementById('stat-errors').textContent = data.stats.byLevel.ERROR;
+        document.getElementById('stat-warns').textContent = data.stats.byLevel.WARN;
+        document.getElementById('stat-info').textContent = data.stats.byLevel.INFO;
+      }
+    } catch (err) {
+      console.error('Error loading stats:', err);
+    }
+  }
+
+  async function loadContexts() {
+    try {
+      const res = await fetch('/admin/logs/contexts', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('memo_token')}` }
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        allContexts = data.contexts;
+        const select = document.getElementById('filter-context');
+        allContexts.forEach(ctx => {
+          const option = document.createElement('option');
+          option.value = ctx;
+          option.textContent = ctx;
+          select.appendChild(option);
+        });
+      }
+    } catch (err) {
+      console.error('Error loading contexts:', err);
+    }
+  }
+
+  async function loadLogs() {
+    const level = document.getElementById('filter-level').value;
+    const context = document.getElementById('filter-context').value;
+    const hours = document.getElementById('filter-hours').value;
+    const search = document.getElementById('filter-search').value;
+
+    const offset = (currentPage - 1) * limit;
+
+    try {
+      document.getElementById('error-message').style.display = 'none';
+      const params = new URLSearchParams({
+        limit: limit.toString(),
+        offset: offset.toString(),
+        ...(level && { level }),
+        ...(context && { context }),
+        ...(hours && { hours }),
+        ...(search && { search }),
+      });
+
+      const res = await fetch(`/admin/logs?${params}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('memo_token')}` }
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        renderLogs(data.logs);
+        updatePagination(data.total, data.filtered);
+      } else {
+        showError(data.error?.message || 'Erro ao carregar logs');
+      }
+    } catch (err) {
+      showError(err.message);
+      console.error('Error loading logs:', err);
+    }
+
+    document.getElementById('last-updated').textContent =
+      `Atualizado: ${new Date().toLocaleTimeString('pt-BR')}`;
+  }
+
+  function renderLogs(logs) {
+    const tbody = document.getElementById('logs-table-body');
+
+    if (!logs || logs.length === 0) {
+      tbody.innerHTML = '<div class="logs-empty">Nenhum log encontrado</div>';
+      return;
+    }
+
+    tbody.innerHTML = logs.map(log => `
+      <div class="logs-table-row">
+        <div class="log-time">${new Date(log.timestamp).toLocaleTimeString('pt-BR')}</div>
+        <div class="log-level ${log.level.toLowerCase()}">${log.level}</div>
+        <div class="log-context">${log.context || '-'}</div>
+        <div class="log-request-id">${log.requestId || '-'}</div>
+        <div>
+          <div class="log-message">${escapeHtml(log.message)}</div>
+          ${log.error ? `<div class="log-error">→ ${escapeHtml(log.error)}</div>` : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function updatePagination(total, filtered) {
+    const totalPages = Math.ceil(filtered / limit);
+    document.getElementById('showing-start').textContent = filtered === 0 ? 0 : (currentPage - 1) * limit + 1;
+    document.getElementById('showing-end').textContent = Math.min(currentPage * limit, filtered);
+    document.getElementById('total-count').textContent = filtered.toLocaleString('pt-BR');
+    document.getElementById('page-info').textContent = `Página ${currentPage} de ${Math.max(1, totalPages)}`;
+
+    document.getElementById('btn-prev').disabled = currentPage === 1;
+    document.getElementById('btn-next').disabled = currentPage >= totalPages;
+  }
+
+  function previousPage() {
+    if (currentPage > 1) {
+      currentPage--;
+      loadLogs();
+    }
+  }
+
+  function nextPage() {
+    currentPage++;
+    loadLogs();
+  }
+
+  function applyFilters() {
+    currentPage = 1;
+    loadLogs();
+  }
+
+  function toggleAutoRefresh() {
+    const checked = document.getElementById('auto-refresh').checked;
+
+    if (checked) {
+      autoRefreshInterval = setInterval(() => {
+        loadLogs();
+        loadStats();
+      }, 5000);
+    } else {
+      clearInterval(autoRefreshInterval);
+    }
+  }
+
+  function showError(message) {
+    const el = document.getElementById('error-message');
+    el.textContent = message;
+    el.style.display = 'block';
+  }
+
+  function escapeHtml(text) {
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+    return text.replace(/[&<>"']/g, m => map[m]);
+  }
+
+  function logout() {
+    if (confirm('Tem certeza que deseja sair?')) {
+      localStorage.removeItem('memo_token');
+      window.location.href = 'index.html';
+    }
+  }
+
+  // Initialize
+  document.addEventListener('DOMContentLoaded', () => {
+    const token = localStorage.getItem('memo_token');
+    if (!token) {
+      window.location.href = 'index.html';
+      return;
+    }
+
+    loadStats();
+    loadContexts();
+    loadLogs();
+  });
+</script>
+
+</body>
+</html>

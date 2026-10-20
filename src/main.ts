@@ -12,6 +12,7 @@ import webhookRoutes from './routes/webhook.js';
 import healthRoutes from './routes/health.js';
 import adminRoutes from './routes/admin.js';
 import analyticsRoutes from './routes/analytics.js';
+import logsRoutes from './routes/logs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const env = getEnv();
@@ -51,6 +52,7 @@ app.use('/', webhookRoutes);
 app.use('/', healthRoutes);
 app.use('/', adminRoutes);
 app.use('/admin', analyticsRoutes);
+app.use('/admin', logsRoutes);
 
 // Health check on root
 app.get('/', (req, res) => {
