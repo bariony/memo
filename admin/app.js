@@ -59,7 +59,9 @@ async function loadWhitelist() {
 
     data.users.forEach((user) => {
       const row = tbody.insertRow();
-      const date = new Date(user.permitted_until).toLocaleDateString('pt-BR');
+      const dateStr = user.permitted_until.split('T')[0]; // pega só YYYY-MM-DD
+      const [year, month, day] = dateStr.split('-');
+      const date = `${day}/${month}/${year}`;
       const statusClass = user.status === 'active' ? 'status-active' : 'status-revoked';
 
       row.innerHTML = `
@@ -88,6 +90,10 @@ async function addUser() {
   if (!phone || !expiry) return alert('Preencha todos os campos');
 
   try {
+    // Corrige timezone: pega a data do input e ajusta
+    const d = new Date(expiry + 'T00:00:00');
+    const correctedDate = new Date(d.getTime() + d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+
     const res = await fetch('/admin/whitelist', {
       method: 'POST',
       headers: {
@@ -96,7 +102,7 @@ async function addUser() {
       },
       body: JSON.stringify({
         phone,
-        permitted_until: expiry
+        permitted_until: correctedDate
       })
     });
 
@@ -128,17 +134,21 @@ async function revokeUser(phone) {
 }
 
 async function editUser(phone) {
-  const newDate = prompt('Nova data de expiração (YYYY-MM-DD):');
+  const newDate = prompt('Nova data de expiração (DD/MM/YYYY):');
   if (!newDate) return;
 
   try {
+    // Converte DD/MM/YYYY para YYYY-MM-DD
+    const [day, month, year] = newDate.split('/');
+    const formatted = `${year}-${month}-${day}`;
+
     const res = await fetch(`/admin/whitelist/${phone}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ permitted_until: newDate })
+      body: JSON.stringify({ permitted_until: formatted })
     });
 
     if (!res.ok) throw new Error('Erro');
