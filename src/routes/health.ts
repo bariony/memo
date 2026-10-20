@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase } from '../config/database.js';
-import { getRedis } from '../config/redis.js';
+import { redis, connectRedis } from '../config/redis.js';
 
 const router = Router();
 
@@ -11,7 +11,9 @@ router.get('/health', async (req: Request, res: Response) => {
     await pool.query('SELECT 1');
 
     // Check Redis
-    const redis = await getRedis();
+    if (!redis.isOpen) {
+      await connectRedis();
+    }
     await redis.ping();
 
     res.status(200).json({ status: 'healthy', timestamp: new Date() });

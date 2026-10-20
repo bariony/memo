@@ -1,21 +1,17 @@
 import { Worker, Queue } from 'bullmq';
-import { getRedis } from '../config/redis.js';
+import { redis, connectRedis } from '../config/redis.js';
 import { getDatabase } from '../config/database.js';
-import { EvolutionService } from '../services/evolution.service.js';
+import { evolution } from '../services/evolution.service.js';
 
 export async function initializeReminderWorker() {
-  const redis = await getRedis();
-  const reminderQueue = new Queue('reminders', { connection: redis });
+  const reminderQueue = new Queue('reminders', { connection: { host: 'localhost', port: 6379 } as any });
 
-  const worker = new Worker(
-    'reminders',
-    async (job) => {
+  const worker = new Worker('reminders', async (job: any) => {
       const { reminderId, phone, message } = job.data;
       const pool = getDatabase();
-      const evolutionService = new EvolutionService();
 
       try {
-        await evolutionService.sendMessage(phone, message);
+        await evolution.sendMessage(phone, message);
         await pool.query('UPDATE reminders SET sent = true WHERE id = $1', [reminderId]);
         console.log(`✓ Reminder sent to ${phone}`);
       } catch (error) {
@@ -26,9 +22,7 @@ export async function initializeReminderWorker() {
         );
         throw error;
       }
-    },
-    { connection: redis, concurrency: 5 }
-  );
+  }, { connection: { host: 'localhost', port: 6379 } as any, concurrency: 5 });
 
   worker.on('failed', (job, err) => {
     console.error(`Job ${job?.id} failed:`, err.message);

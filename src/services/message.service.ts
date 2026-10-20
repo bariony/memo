@@ -2,7 +2,7 @@ import { ClaudeService } from './claude.service.js';
 import { WhitelistService } from './whitelist.service.js';
 import { ExpenseService } from './expense.service.js';
 import { ReminderService } from './reminder.service.js';
-import { EvolutionService } from './evolution.service.js';
+import { evolution } from './evolution.service.js';
 import { getDatabase } from '../config/database.js';
 
 export class MessageService {
@@ -10,7 +10,7 @@ export class MessageService {
   private whitelistService = new WhitelistService();
   private expenseService = new ExpenseService();
   private reminderService = new ReminderService();
-  private evolutionService = new EvolutionService();
+  private evolutionService = evolution;
 
   async processMessage(phone: string, messageText: string): Promise<string> {
     try {

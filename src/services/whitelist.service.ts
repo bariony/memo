@@ -1,5 +1,5 @@
 import { getDatabase } from '../config/database.js';
-import { getRedis } from '../config/redis.js';
+import { redis, connectRedis } from '../config/redis.js';
 import { WhitelistEntry } from '../types/index.js';
 
 export class WhitelistService {
@@ -7,7 +7,7 @@ export class WhitelistService {
 
   async validateAccess(phone: string): Promise<{ authorized: boolean; reason?: string }> {
     // Check Redis cache first
-    const redis = await getRedis();
+    // redis client already imported
     const cached = await redis.get(`whitelist:${phone}`);
     if (cached === 'authorized') {
       return { authorized: true };
@@ -58,7 +58,7 @@ export class WhitelistService {
     );
 
     // Invalidate cache
-    const redis = await getRedis();
+    // redis client already imported
     await redis.del(`whitelist:${phone}`);
   }
 
@@ -70,7 +70,7 @@ export class WhitelistService {
     );
 
     // Invalidate cache
-    const redis = await getRedis();
+    // redis client already imported
     await redis.del(`whitelist:${phone}`);
   }
 
@@ -82,7 +82,7 @@ export class WhitelistService {
     );
 
     // Invalidate cache
-    const redis = await getRedis();
+    // redis client already imported
     await redis.del(`whitelist:${phone}`);
   }
 

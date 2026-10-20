@@ -1,5 +1,5 @@
 import { Queue } from 'bullmq';
-import { getRedis } from '../config/redis.js';
+import { redis, connectRedis } from '../config/redis.js';
 import { getDatabase } from '../config/database.js';
 import { Reminder } from '../types/index.js';
 
@@ -8,8 +8,8 @@ export class ReminderService {
 
   async getQueue(): Promise<Queue> {
     if (!this.reminderQueue) {
-      const redis = await getRedis();
-      this.reminderQueue = new Queue('reminders', { connection: redis });
+      // redis client already imported
+      this.reminderQueue = new Queue('reminders', { connection: redis } as any);
     }
     return this.reminderQueue;
   }

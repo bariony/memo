@@ -2,12 +2,17 @@ import { Queue, Worker } from 'bullmq';
 import { redis } from '../config/redis.js';
 import { logger } from '../utils/logger.js';
 import { generateDailySummary, generateRenewalReminder7Days, generateRenewalReminder2Days, generateRenewalReminder1Day, generateReEngagementMessage } from '../services/userMessaging.service.js';
-import { evolution } from '../services/evolution.service.js'; // Assuming we have this
+import { evolution } from '../services/evolution.service.js';
 
 /**
  * Message Queue for BullMQ
  */
-export const messagingQueue = new Queue('messaging', { connection: redis });
+export const messagingQueue = new Queue('messaging', {
+  connection: {
+    host: 'localhost',
+    port: 6379,
+  } as any,
+});
 
 /**
  * Job types
@@ -33,7 +38,7 @@ export interface MessageJob {
  * Initialize messaging worker
  */
 export async function initializeMessagingWorker() {
-  const worker = new Worker('messaging', async (job) => {
+  const worker = new Worker('messaging', async (job: any) => {
     try {
       const { phoneNumber, type, data } = job.data as MessageJob;
 
@@ -41,22 +46,22 @@ export async function initializeMessagingWorker() {
 
       switch (type) {
         case MessageJobType.DAILY_SUMMARY:
-          message = generateDailySummary(data);
+          message = generateDailySummary(data as any);
           break;
         case MessageJobType.RENEWAL_REMINDER_7D:
-          message = generateRenewalReminder7Days(data);
+          message = generateRenewalReminder7Days(data as any);
           break;
         case MessageJobType.RENEWAL_REMINDER_2D:
-          message = generateRenewalReminder2Days(data);
+          message = generateRenewalReminder2Days(data as any);
           break;
         case MessageJobType.RENEWAL_REMINDER_1D:
-          message = generateRenewalReminder1Day(data);
+          message = generateRenewalReminder1Day(data as any);
           break;
         case MessageJobType.WELCOME:
           message = data.message; // Pre-generated welcome message
           break;
         case MessageJobType.RE_ENGAGEMENT:
-          message = generateReEngagementMessage(data);
+          message = generateReEngagementMessage(data as any);
           break;
         default:
           throw new Error(`Unknown message type: ${type}`);
@@ -79,7 +84,7 @@ export async function initializeMessagingWorker() {
       });
       throw err;
     }
-  }, { connection: redis });
+  }, { connection: { host: 'localhost', port: 6379 } as any });
 
   worker.on('completed', (job) => {
     logger.debug(`Job completed: ${job.id}`, 'MessagingWorker');

@@ -8,16 +8,19 @@ import { evolution } from '../services/evolution.service.js';
  * Re-engagement Queue for BullMQ
  * Handles periodic checks for inactive users and sends re-engagement messages
  */
-export const reengagementQueue = new Queue('reengagement', { connection: redis });
+export const reengagementQueue = new Queue('reengagement', {
+  connection: {
+    host: 'localhost',
+    port: 6379,
+  } as any,
+});
 
 /**
  * Initialize re-engagement worker
  * This worker runs periodic checks for user inactivity (48h+ without interaction)
  */
 export async function initializeReengagementWorker() {
-  const worker = new Worker(
-    'reengagement',
-    async (job) => {
+  const worker = new Worker('reengagement', async (job: any) => {
       try {
         const { phoneNumber, userName } = job.data;
 
@@ -62,9 +65,7 @@ export async function initializeReengagementWorker() {
         });
         throw err;
       }
-    },
-    { connection: redis }
-  );
+  }, { connection: { host: 'localhost', port: 6379 } as any });
 
   worker.on('completed', (job) => {
     logger.debug(`Re-engagement check completed: ${job.id}`, 'ReengagementWorker');

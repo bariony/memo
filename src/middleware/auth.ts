@@ -33,3 +33,6 @@ export function requireAuth(req: any, res: any, next: any) {
     res.status(401).json({ error: 'Invalid token' });
   }
 }
+
+// Alias for compatibility
+export const authMiddleware = requireAuth;

@@ -23,7 +23,8 @@ export async function sendMessage(phoneNumber: string, message: string): Promise
     const cleanPhone = phoneNumber.replace(/\D/g, '');
 
     // In development/mock mode, just log
-    if (env.NODE_ENV === 'development' || !env.EVOLUTION_API_URL) {
+    const evolutionUrl = (process.env.EVOLUTION_API_URL || '').trim();
+    if (env.NODE_ENV === 'development' || !evolutionUrl) {
       logger.info(
         `[MOCK] WhatsApp message would be sent`,
         'EvolutionService',
@@ -37,7 +38,7 @@ export async function sendMessage(phoneNumber: string, message: string): Promise
     }
 
     // Real Evolution API call
-    const response = await fetch(`${env.EVOLUTION_API_URL}/message/sendText`, {
+    const response = await fetch(`${evolutionUrl}/message/sendText`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -80,8 +81,9 @@ export async function sendMediaMessage(
 ): Promise<boolean> {
   try {
     const cleanPhone = phoneNumber.replace(/\D/g, '');
+    const evolutionUrl = (process.env.EVOLUTION_API_URL || '').trim();
 
-    if (env.NODE_ENV === 'development' || !env.EVOLUTION_API_URL) {
+    if (env.NODE_ENV === 'development' || !evolutionUrl) {
       logger.info(
         `[MOCK] WhatsApp media message would be sent`,
         'EvolutionService',
@@ -94,7 +96,7 @@ export async function sendMediaMessage(
       return true;
     }
 
-    const response = await fetch(`${env.EVOLUTION_API_URL}/message/sendMedia`, {
+    const response = await fetch(`${evolutionUrl}/message/sendMedia`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

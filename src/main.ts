@@ -69,7 +69,7 @@ app.get('/', (req, res) => {
     success: true,
     message: 'Memo API is running',
     timestamp: new Date().toISOString(),
-    version: env.APP_VERSION || '0.1.0',
+    version: '0.1.0',
   });
 });
 
