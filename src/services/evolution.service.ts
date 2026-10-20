@@ -1,34 +1,130 @@
-import axios from 'axios';
+import { logger } from '../utils/logger.js';
 import { getEnv } from '../config/env.js';
 
 const env = getEnv();
 
-export class EvolutionService {
-  private apiUrl = `https://api.evolution.br/message/sendText/${env.EVOLUTION_INSTANCE}`;
-  private apiKey = env.EVOLUTION_API_KEY;
+/**
+ * Evolution API service for WhatsApp messaging
+ * Handles sending messages via WhatsApp Business API
+ */
 
-  async sendMessage(phone: string, text: string): Promise<void> {
-    try {
-      const response = await axios.post(
-        this.apiUrl,
+interface EvolutionMessage {
+  phoneNumber: string;
+  message: string;
+  mediaUrl?: string;
+}
+
+/**
+ * Send message via Evolution API / WhatsApp
+ */
+export async function sendMessage(phoneNumber: string, message: string): Promise<boolean> {
+  try {
+    // Remove any formatting characters
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+
+    // In development/mock mode, just log
+    if (env.NODE_ENV === 'development' || !env.EVOLUTION_API_URL) {
+      logger.info(
+        `[MOCK] WhatsApp message would be sent`,
+        'EvolutionService',
         {
-          number: phone,
-          text: text
-        },
-        {
-          headers: {
-            'apikey': this.apiKey
-          },
-          timeout: 5000
+          phoneNumber: cleanPhone,
+          messageLength: message.length,
+          firstLine: message.split('\n')[0],
         }
       );
-
-      if (response.status !== 200 && response.status !== 201) {
-        throw new Error(`Evolution API returned ${response.status}`);
-      }
-    } catch (error) {
-      console.error(`Failed to send message to ${phone}:`, error);
-      throw error;
+      return true;
     }
+
+    // Real Evolution API call
+    const response = await fetch(`${env.EVOLUTION_API_URL}/message/sendText`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${env.EVOLUTION_API_KEY}`,
+      },
+      body: JSON.stringify({
+        number: cleanPhone,
+        text: message,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Evolution API error: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+
+    logger.info(
+      'WhatsApp message sent successfully',
+      'EvolutionService',
+      { phoneNumber: cleanPhone, messageLength: message.length }
+    );
+
+    return true;
+  } catch (err) {
+    logger.error('Failed to send WhatsApp message', err, 'EvolutionService', {
+      phoneNumber,
+      messageLength: message.length,
+    });
+    return false;
   }
 }
+
+/**
+ * Send message with media
+ */
+export async function sendMediaMessage(
+  phoneNumber: string,
+  mediaUrl: string,
+  caption?: string
+): Promise<boolean> {
+  try {
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+
+    if (env.NODE_ENV === 'development' || !env.EVOLUTION_API_URL) {
+      logger.info(
+        `[MOCK] WhatsApp media message would be sent`,
+        'EvolutionService',
+        {
+          phoneNumber: cleanPhone,
+          mediaUrl,
+          caption,
+        }
+      );
+      return true;
+    }
+
+    const response = await fetch(`${env.EVOLUTION_API_URL}/message/sendMedia`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${env.EVOLUTION_API_KEY}`,
+      },
+      body: JSON.stringify({
+        number: cleanPhone,
+        mediaUrl,
+        caption,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Evolution API error: ${response.status}`);
+    }
+
+    logger.info(
+      'WhatsApp media message sent',
+      'EvolutionService',
+      { phoneNumber: cleanPhone, mediaUrl }
+    );
+
+    return true;
+  } catch (err) {
+    logger.error('Failed to send WhatsApp media message', err, 'EvolutionService');
+    return false;
+  }
+}
+
+export const evolution = {
+  sendMessage,
+  sendMediaMessage,
+};
