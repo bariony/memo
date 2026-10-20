@@ -38,11 +38,11 @@ export async function sendMessage(phoneNumber: string, message: string): Promise
     }
 
     // Real Evolution API call
-    const response = await fetch(`${evolutionUrl}/message/sendText`, {
+    const response = await fetch(`${evolutionUrl}/message/sendText/${env.EVOLUTION_INSTANCE}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${env.EVOLUTION_API_KEY}`,
+        'apikey': env.EVOLUTION_API_KEY,
       },
       body: JSON.stringify({
         number: cleanPhone,
@@ -96,11 +96,11 @@ export async function sendMediaMessage(
       return true;
     }
 
-    const response = await fetch(`${evolutionUrl}/message/sendMedia`, {
+    const response = await fetch(`${evolutionUrl}/message/sendMedia/${env.EVOLUTION_INSTANCE}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${env.EVOLUTION_API_KEY}`,
+        'apikey': env.EVOLUTION_API_KEY,
       },
       body: JSON.stringify({
         number: cleanPhone,
