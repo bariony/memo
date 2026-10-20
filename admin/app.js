@@ -110,17 +110,13 @@ function showLogin() {
 // ============================================================================
 
 async function loadDashboard() {
-  try {
-    const res = await fetch('/admin/stats', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+  // Load stats in background (don't block whitelist)
+  fetch('/admin/stats', {
+    headers: { 'Authorization': `Bearer ${token}` }
+  }).catch(err => console.error('Stats load error:', err));
 
-    if (!res.ok) throw new Error('Failed to load stats');
-
-    await loadWhitelist();
-  } catch (err) {
-    console.error('Dashboard load error:', err);
-  }
+  // Load whitelist immediately without waiting for stats
+  await loadWhitelist();
 }
 
 async function loadWhitelist() {
