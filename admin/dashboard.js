@@ -5,9 +5,8 @@ let charts = {};
 document.addEventListener('DOMContentLoaded', () => {
   const token = localStorage.getItem('memo_token');
   if (token) {
-    setupFilterButtons();
+    // Period buttons (.period-tab) are already wired via onclick="setPeriod()" in index.html
     loadAnalytics(7);
-    loadRecentMessages();
   }
 });
 
@@ -372,10 +371,15 @@ function updateKPIs(users, messages, tokens) {
   const newUsers = users.reduce((sum, u) => sum + (u.new_count || 0), 0);
   const totalMessages = messages.reduce((sum, m) => sum + (m.count || 0), 0);
 
-  document.getElementById('total-users').textContent = formatNumber(totalUsers);
-  document.getElementById('new-users').textContent = formatNumber(newUsers);
-  document.getElementById('total-messages').textContent = formatNumber(totalMessages);
-  document.getElementById('total-tokens').textContent = formatNumber(tokens.total || 0);
+  const elTotal = document.getElementById('stat-total');
+  const elNew = document.getElementById('stat-new');
+  const elMsgs = document.getElementById('stat-msgs');
+  const elTokens = document.getElementById('stat-tokens');
+
+  if (elTotal) elTotal.textContent = formatNumber(totalUsers);
+  if (elNew) elNew.textContent = formatNumber(newUsers);
+  if (elMsgs) elMsgs.textContent = formatNumber(totalMessages);
+  if (elTokens) elTokens.textContent = formatNumber(tokens.total || 0);
 }
 
 // ============================================================================

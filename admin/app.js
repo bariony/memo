@@ -96,13 +96,17 @@ function logout() {
 // ============================================================================
 
 function showDashboard() {
-  document.getElementById('login-section').classList.add('hidden');
-  document.getElementById('dashboard-section').classList.remove('hidden');
+  const loginSection = document.getElementById('login-section');
+  const dashboardSection = document.getElementById('dashboard-section');
+  if (loginSection) loginSection.classList.add('hidden');
+  if (dashboardSection) dashboardSection.classList.remove('hidden');
 }
 
 function showLogin() {
-  document.getElementById('login-section').classList.remove('hidden');
-  document.getElementById('dashboard-section').classList.add('hidden');
+  const loginSection = document.getElementById('login-section');
+  const dashboardSection = document.getElementById('dashboard-section');
+  if (loginSection) loginSection.classList.remove('hidden');
+  if (dashboardSection) dashboardSection.classList.add('hidden');
 }
 
 // ============================================================================
