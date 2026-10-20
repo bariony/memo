@@ -3,9 +3,15 @@ FROM node:20-alpine
 WORKDIR /app
 
 COPY package*.json ./
+RUN npm ci
+
+COPY src/ ./src/
+COPY tsconfig.json ./
+
+RUN npm run build
+
 RUN npm ci --only=production
 
-COPY dist/ ./dist/
 COPY migrations/ ./migrations/
 COPY admin/ ./admin/
 
