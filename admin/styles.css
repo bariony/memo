@@ -120,16 +120,19 @@ html, body {
 }
 
 .logo-icon {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
   background: var(--grad);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
   flex-shrink: 0;
   box-shadow: 0 4px 14px rgba(37, 211, 102, 0.35);
+  letter-spacing: -0.5px;
 }
 
 .logo-text {
@@ -139,14 +142,7 @@ html, body {
 }
 
 .logo-badge {
-  margin-left: auto;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 20px;
-  background: rgba(37, 211, 102, 0.12);
-  color: var(--accent);
-  border: 1px solid rgba(37, 211, 102, 0.25);
+  display: none;
 }
 
 .nav {

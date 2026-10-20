@@ -410,11 +410,13 @@ function isValidPhone(value) {
   const phone = value.replace(/\D/g, '');
   if (phone.length !== 11) return false;
 
-  const firstDigit = phone[0];
-  const secondDigit = phone[1];
+  // DDD deve ser 11-99
+  const ddd = parseInt(phone.substring(0, 2));
+  if (ddd < 11 || ddd > 99) return false;
 
-  if (firstDigit !== '1' && firstDigit !== '2') return false;
-  if (secondDigit === '0' || secondDigit === '1') return false;
+  // Terceiro dígito deve ser 9 para celular
+  const firstDigitAfterDDD = phone[2];
+  if (firstDigitAfterDDD !== '9') return false;
 
   return true;
 }
