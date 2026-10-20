@@ -21,17 +21,13 @@ router.post('/admin/auth', (req: Request, res: Response) => {
 });
 
 // Get whitelist
-router.get('/admin/whitelist', requireAuth, (req: Request, res: Response) => {
-  // TODO: Connect to real database when migrations are complete
-  return res.json({
-    users: [
-      {
-        phone_number: '11986683737',
-        permitted_until: '2026-10-23',
-        status: 'active'
-      }
-    ]
-  });
+router.get('/admin/whitelist', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const users = await whitelistService.listUsers();
+    res.json({ users });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
 });
 
 // Add user
@@ -79,12 +75,24 @@ router.patch('/admin/whitelist/:phone', requireAuth, async (req: Request, res: R
 });
 
 // Dashboard stats
-router.get('/admin/stats', requireAuth, (req: Request, res: Response) => {
-  // TODO: Connect to real database when migrations are complete
-  return res.json({
-    active_users: 1,
-    total_expenses: 0
-  });
+router.get('/admin/stats', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const pool = getDatabase();
+
+    const activeUsers = await pool.query(
+      'SELECT COUNT(*) FROM whitelist WHERE status = $1',
+      ['active']
+    );
+
+    const totalExpenses = await pool.query('SELECT COUNT(*) FROM expenses');
+
+    res.json({
+      active_users: parseInt(activeUsers.rows[0].count),
+      total_expenses: parseInt(totalExpenses.rows[0].count)
+    });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
 });
 
 export default router;
