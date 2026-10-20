@@ -22,15 +22,16 @@ router.post('/admin/auth', (req: Request, res: Response) => {
 
 // Get whitelist
 router.get('/admin/whitelist', (req: Request, res: Response) => {
-  // TODO: Connect to real database when migrations are complete
-  // For now return mock data immediately
-  res.json({ users: [
-    {
-      phone_number: '11986683737',
-      permitted_until: '2026-10-23',
-      status: 'active'
-    }
-  ] });
+  // Return mock data immediately (no auth, no async, no db)
+  return res.json({
+    users: [
+      {
+        phone_number: '11986683737',
+        permitted_until: '2026-10-23',
+        status: 'active'
+      }
+    ]
+  });
 });
 
 // Add user
@@ -79,9 +80,8 @@ router.patch('/admin/whitelist/:phone', requireAuth, async (req: Request, res: R
 
 // Dashboard stats
 router.get('/admin/stats', (req: Request, res: Response) => {
-  // TODO: Connect to real database when migrations are complete
-  // For now, return mock data
-  res.json({
+  // Return mock data immediately (no auth, no async, no db)
+  return res.json({
     active_users: 1,
     total_expenses: 0
   });
