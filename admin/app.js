@@ -1,6 +1,7 @@
 let token = localStorage.getItem('memo_token');
 let allUsers = [];
 let editingPhone = null;
+let toastTimer = null;
 
 // ============================================================================
 // THEME MANAGEMENT
@@ -281,7 +282,10 @@ async function revokeUser(phone) {
 }
 
 function filterTable() {
-  const searchTerm = document.getElementById('search-input').value.toLowerCase();
+  const searchInput = document.querySelector('.search-input');
+  if (!searchInput) return;
+
+  const searchTerm = searchInput.value.toLowerCase();
 
   if (!searchTerm) {
     renderWhitelist(allUsers);
@@ -293,4 +297,71 @@ function filterTable() {
   );
 
   renderWhitelist(filtered);
+}
+
+// ============================================================================
+// TOAST & UI HELPERS
+// ============================================================================
+
+function showToast(msg, icon = '✅') {
+  const toast = document.getElementById('toast');
+  const toastIcon = document.getElementById('toast-icon');
+  const toastMsg = document.getElementById('toast-msg');
+
+  if (toastIcon) toastIcon.textContent = icon;
+  if (toastMsg) toastMsg.textContent = msg;
+
+  toast?.classList.add('show');
+
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast?.classList.remove('show');
+  }, 3000);
+}
+
+function setPeriod(btn, days) {
+  document.querySelectorAll('.period-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  loadAnalytics(days);
+}
+
+function refreshData() {
+  loadDashboard();
+  showToast('🔄 Dados atualizados!');
+}
+
+function openModal() {
+  const modal = document.getElementById('edit-modal');
+  if (modal) modal.classList.add('open');
+}
+
+function closeEditModal() {
+  const modal = document.getElementById('edit-modal');
+  if (modal) modal.classList.remove('open');
+  editingPhone = null;
+}
+
+function filterStatus(el, status) {
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+
+  // Filter table rows based on status
+  document.querySelectorAll('#whitelist-body tr').forEach(row => {
+    const badge = row.querySelector('.badge');
+    if (!badge) return;
+
+    const isActive = badge.classList.contains('active');
+    const matches = status === 'all' || (status === 'active' && isActive) || (status === 'inactive' && !isActive);
+    row.style.display = matches ? '' : 'none';
+  });
+
+  updateCount();
+}
+
+function updateCount() {
+  const visible = [...document.querySelectorAll('#whitelist-body tr')].filter(r => r.style.display !== 'none').length;
+  const countEl = document.getElementById('table-count');
+  if (countEl) {
+    countEl.textContent = `${visible} usuário${visible !== 1 ? 's' : ''}`;
+  }
 }

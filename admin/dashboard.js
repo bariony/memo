@@ -137,9 +137,13 @@ function renderUserChart(data) {
   if (charts.users) charts.users.destroy();
 
   if (!data || data.length === 0) {
-    showEmptyChart(ctx);
+    showEmptyChart(ctx, 'users');
     return;
   }
+
+  ctx.style.display = 'block';
+  const emptyEl = document.getElementById('users-empty');
+  if (emptyEl) emptyEl.style.display = 'none';
 
   charts.users = new Chart(ctx, {
     type: 'line',
@@ -185,9 +189,13 @@ function renderMessagesChart(data) {
   if (charts.messages) charts.messages.destroy();
 
   if (!data || data.length === 0) {
-    showEmptyChart(ctx);
+    showEmptyChart(ctx, 'messages');
     return;
   }
+
+  ctx.style.display = 'block';
+  const emptyEl = document.getElementById('messages-empty');
+  if (emptyEl) emptyEl.style.display = 'none';
 
   charts.messages = new Chart(ctx, {
     type: 'bar',
@@ -227,9 +235,13 @@ function renderTokensChart(data) {
   if (charts.tokens) charts.tokens.destroy();
 
   if (!data || data.length === 0) {
-    showEmptyChart(ctx);
+    showEmptyChart(ctx, 'tokens');
     return;
   }
+
+  ctx.style.display = 'block';
+  const emptyEl = document.getElementById('tokens-empty');
+  if (emptyEl) emptyEl.style.display = 'none';
 
   charts.tokens = new Chart(ctx, {
     type: 'line',
@@ -275,9 +287,13 @@ function renderExpensesChart(data) {
   if (charts.expenses) charts.expenses.destroy();
 
   if (!data || data.length === 0) {
-    showEmptyChart(ctx);
+    showEmptyChart(ctx, 'expenses');
     return;
   }
+
+  ctx.style.display = 'block';
+  const emptyEl = document.getElementById('expenses-empty');
+  if (emptyEl) emptyEl.style.display = 'none';
 
   charts.expenses = new Chart(ctx, {
     type: 'line',
@@ -316,16 +332,13 @@ function renderExpensesChart(data) {
   });
 }
 
-function showEmptyChart(canvas) {
-  const ctx = canvas.getContext('2d');
-  const width = canvas.parentElement.offsetWidth;
-  const height = 280;
-
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = '#8a92a3';
-  ctx.font = '12px -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica Neue, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('Sem dados para o período', width / 2, height / 2);
+function showEmptyChart(canvas, name) {
+  canvas.style.display = 'none';
+  const container = canvas.parentElement;
+  let emptyEl = document.getElementById(name + '-empty');
+  if (emptyEl) {
+    emptyEl.style.display = 'flex';
+  }
 }
 
 // ============================================================================
