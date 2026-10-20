@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memo Admin</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>📱 Memo Admin</h1>
+
+    <div id="login-section" class="section">
+      <h2>Login</h2>
+      <input type="password" id="password" placeholder="Senha do admin">
+      <button onclick="login()">Entrar</button>
+    </div>
+
+    <div id="dashboard-section" class="section hidden">
+      <h2>Painel de Controle</h2>
+
+      <div class="stats">
+        <div class="stat">
+          <span>Usuários ativos</span>
+          <strong id="active-users">-</strong>
+        </div>
+        <div class="stat">
+          <span>Gastos registrados</span>
+          <strong id="total-expenses">-</strong>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <h3>Adicionar usuário</h3>
+        <input type="text" id="new-phone" placeholder="Número WhatsApp (ex: 11999999999)">
+        <input type="date" id="new-expiry" required>
+        <button onclick="addUser()">Adicionar</button>
+      </div>
+
+      <div class="form-section">
+        <h3>Lista de usuários</h3>
+        <table id="whitelist-table">
+          <thead>
+            <tr>
+              <th>Número</th>
+              <th>Válido até</th>
+              <th>Status</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="whitelist-body"></tbody>
+        </table>
+      </div>
+
+      <button onclick="logout()" class="logout-btn">Sair</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
