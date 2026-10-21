@@ -50,18 +50,17 @@ Mensagem: "${message}"`
     );
   }
 
-  async answerGeneralQuestion(message: string): Promise<string> {
-    return this.callClaude(
-      `Responda à pergunta em português de forma clara e concisa (máximo 3 frases):\n\n${message}`
-    );
+  async answerGeneralQuestion(message: string, systemPrompt?: string): Promise<string> {
+    return this.callClaude(message, systemPrompt);
   }
 
-  private async callClaude(prompt: string): Promise<string> {
+  private async callClaude(prompt: string, system?: string): Promise<string> {
     const response = await axios.post(
       this.apiUrl,
       {
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 200,
+        max_tokens: 400,
+        ...(system ? { system } : {}),
         messages: [
           {
             role: 'user',

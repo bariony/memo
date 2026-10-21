@@ -6,14 +6,21 @@ import { normalizePhone } from '../utils/validator.js';
 export class WhitelistService {
   private readonly CACHE_TTL = 86400; // 24 hours in seconds
 
-  async validateAccess(phoneRaw: string): Promise<{ authorized: boolean; reason?: string }> {
+  async validateAccess(
+    phoneRaw: string
+  ): Promise<{ authorized: boolean; reason?: string; permitted_until?: string }> {
     const phone = normalizePhone(phoneRaw);
 
     // Check Redis cache first
     // redis client already imported
     const cached = await redis.get(`whitelist:${phone}`);
-    if (cached === 'authorized') {
-      return { authorized: true };
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached.toString());
+        return { authorized: true, permitted_until: parsed.permitted_until };
+      } catch {
+        // Legacy cache value ('authorized' string) - fall through to DB query
+      }
     }
 
     // Query database
@@ -41,8 +48,12 @@ export class WhitelistService {
     }
 
     // Cache authorized access
-    await redis.setEx(`whitelist:${phone}`, this.CACHE_TTL, 'authorized');
-    return { authorized: true };
+    await redis.setEx(
+      `whitelist:${phone}`,
+      this.CACHE_TTL,
+      JSON.stringify({ permitted_until: entry.permitted_until })
+    );
+    return { authorized: true, permitted_until: entry.permitted_until };
   }
 
   async addUser(phoneRaw: string, permitted_until: Date): Promise<void> {

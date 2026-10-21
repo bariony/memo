@@ -4,6 +4,8 @@ import { ExpenseService } from './expense.service.js';
 import { ReminderService } from './reminder.service.js';
 import { evolution } from './evolution.service.js';
 import { getDatabase } from '../config/database.js';
+import { assistantService } from './assistant.service.js';
+import { detectRestrictionType, getSmartResponse } from '../config/assistantResponses.js';
 
 export class MessageService {
   private claudeService = new ClaudeService();
@@ -32,7 +34,24 @@ export class MessageService {
         [phone]
       );
 
-      // 3. Detect intent
+      // 3. Smart contour: catch out-of-scope requests before hitting Claude,
+      // so the user gets a helpful "here's what I CAN do" instead of a flat
+      // refusal (and we save an API call).
+      const restrictionType = detectRestrictionType(messageText);
+      if (restrictionType) {
+        const response = getSmartResponse(restrictionType, phone);
+        await this.evolutionService.sendMessage(phone, response);
+        return response;
+      }
+
+      // 4. Build the full assistant personality/system prompt for this user
+      const systemPrompt = assistantService.getSystemPrompt({
+        phone_number: phone,
+        permitted_until: access.permitted_until!,
+        status: 'active',
+      });
+
+      // 5. Detect intent
       const intent = await this.claudeService.detectIntent(messageText);
 
       let response: string;
@@ -47,7 +66,7 @@ export class MessageService {
       } else if (intent === 'reminder_set') {
         response = 'Lembrete agendado!';
       } else {
-        response = await this.claudeService.answerGeneralQuestion(messageText);
+        response = await this.claudeService.answerGeneralQuestion(messageText, systemPrompt);
       }
 
       // Send response
