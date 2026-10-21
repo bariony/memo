@@ -1,5 +1,5 @@
 import { Queue, Worker } from 'bullmq';
-import { redis } from '../config/redis.js';
+import { getBullMQConnection } from '../config/redis.js';
 import { logger } from '../utils/logger.js';
 import { generateReEngagementMessage } from '../services/userMessaging.service.js';
 import { evolution } from '../services/evolution.service.js';
@@ -9,10 +9,11 @@ import { evolution } from '../services/evolution.service.js';
  * Handles periodic checks for inactive users and sends re-engagement messages
  */
 export const reengagementQueue = new Queue('reengagement', {
-  connection: {
-    host: 'localhost',
-    port: 6379,
-  } as any,
+  connection: getBullMQConnection(),
+});
+
+reengagementQueue.on('error', (err) => {
+  logger.error('Reengagement queue connection error', err, 'ReengagementWorker');
 });
 
 /**
@@ -65,7 +66,7 @@ export async function initializeReengagementWorker() {
         });
         throw err;
       }
-  }, { connection: { host: 'localhost', port: 6379 } as any });
+  }, { connection: getBullMQConnection() });
 
   worker.on('completed', (job) => {
     logger.debug(`Re-engagement check completed: ${job.id}`, 'ReengagementWorker');
@@ -73,6 +74,10 @@ export async function initializeReengagementWorker() {
 
   worker.on('failed', (job, err) => {
     logger.error(`Re-engagement check failed: ${job?.id}`, err, 'ReengagementWorker');
+  });
+
+  worker.on('error', (err) => {
+    logger.error('Reengagement worker connection error', err, 'ReengagementWorker');
   });
 
   return worker;

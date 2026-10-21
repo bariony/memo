@@ -1,5 +1,5 @@
 import { Queue, Worker } from 'bullmq';
-import { redis } from '../config/redis.js';
+import { getBullMQConnection } from '../config/redis.js';
 import { logger } from '../utils/logger.js';
 import { generateDailySummary, generateRenewalReminder7Days, generateRenewalReminder2Days, generateRenewalReminder1Day, generateReEngagementMessage } from '../services/userMessaging.service.js';
 import { evolution } from '../services/evolution.service.js';
@@ -8,10 +8,11 @@ import { evolution } from '../services/evolution.service.js';
  * Message Queue for BullMQ
  */
 export const messagingQueue = new Queue('messaging', {
-  connection: {
-    host: 'localhost',
-    port: 6379,
-  } as any,
+  connection: getBullMQConnection(),
+});
+
+messagingQueue.on('error', (err) => {
+  logger.error('Messaging queue connection error', err, 'MessagingWorker');
 });
 
 /**
@@ -84,7 +85,7 @@ export async function initializeMessagingWorker() {
       });
       throw err;
     }
-  }, { connection: { host: 'localhost', port: 6379 } as any });
+  }, { connection: getBullMQConnection() });
 
   worker.on('completed', (job) => {
     logger.debug(`Job completed: ${job.id}`, 'MessagingWorker');
@@ -92,6 +93,10 @@ export async function initializeMessagingWorker() {
 
   worker.on('failed', (job, err) => {
     logger.error(`Job failed: ${job?.id}`, err, 'MessagingWorker');
+  });
+
+  worker.on('error', (err) => {
+    logger.error('Messaging worker connection error', err, 'MessagingWorker');
   });
 
   return worker;

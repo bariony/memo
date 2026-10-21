@@ -37,33 +37,51 @@ export async function sendMessage(phoneNumber: string, message: string): Promise
       return true;
     }
 
-    // Real Evolution API call
-    const response = await fetch(`${evolutionUrl}/message/sendText/${env.EVOLUTION_INSTANCE}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': env.EVOLUTION_API_KEY,
-      },
-      body: JSON.stringify({
-        number: cleanPhone,
-        text: message,
-      }),
-    });
+    // Real Evolution API call - retried once on transient failures (network
+    // blip, instance briefly reconnecting) instead of silently dropping the
+    // message, which is what was happening before: this function always
+    // swallowed its own errors and returned false, and nothing upstream
+    // checked that return value, so a flaky send just meant total silence
+    // for the user with no retry and no visibility.
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await fetch(`${evolutionUrl}/message/sendText/${env.EVOLUTION_INSTANCE}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': env.EVOLUTION_API_KEY,
+          },
+          body: JSON.stringify({
+            number: cleanPhone,
+            text: message,
+          }),
+          signal: AbortSignal.timeout(10000),
+        });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Evolution API error: ${response.status} - ${JSON.stringify(errorData)}`);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Evolution API error: ${response.status} - ${JSON.stringify(errorData)}`);
+        }
+
+        logger.info(
+          'WhatsApp message sent successfully',
+          'EvolutionService',
+          { phoneNumber: cleanPhone, messageLength: message.length, attempt }
+        );
+
+        return true;
+      } catch (err) {
+        lastError = err;
+        if (attempt === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
     }
 
-    logger.info(
-      'WhatsApp message sent successfully',
-      'EvolutionService',
-      { phoneNumber: cleanPhone, messageLength: message.length }
-    );
-
-    return true;
+    throw lastError;
   } catch (err) {
-    logger.error('Failed to send WhatsApp message', err, 'EvolutionService', {
+    logger.error('Failed to send WhatsApp message after retry', err, 'EvolutionService', {
       phoneNumber,
       messageLength: message.length,
     });

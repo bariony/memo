@@ -1,7 +1,13 @@
 import axios from 'axios';
 import { getEnv } from '../config/env.js';
 import { getDatabase } from '../config/database.js';
-import { Expense, ClaudeParseExpense, ClaudeParseReminder } from '../types/index.js';
+import { retryWithBackoff } from '../utils/resilience.js';
+import { Expense, Reminder, ClaudeParseExpense, ClaudeParseReminder } from '../types/index.js';
+
+export interface ConversationTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
 
 const env = getEnv();
 
@@ -35,7 +41,7 @@ export class ClaudeService {
 
   async detectIntent(message: string, phone: string): Promise<string> {
     const response = await this.callClaude(
-      `Analise essa mensagem e categorize como 'expense_log', 'expense_query', 'general_question' ou 'reminder_set'. Responda APENAS a categoria (uma palavra).
+      `Analise essa mensagem e categorize como 'expense_log' (registrar um gasto novo), 'expense_query' (perguntando sobre gastos passados), 'reminder_set' (pedindo para criar/agendar um lembrete ou compromisso novo), 'reminder_query' (perguntando sobre compromissos/lembretes já existentes, ex: "tenho algo marcado para amanhã?", "o que eu tenho essa semana?") ou 'general_question' (qualquer outra coisa). Responda APENAS a categoria (uma palavra).
 
 Mensagem: "${message}"`,
       undefined,
@@ -44,7 +50,7 @@ Mensagem: "${message}"`,
     );
 
     const intent = response.toLowerCase().trim();
-    if (['expense_log', 'expense_query', 'general_question', 'reminder_set'].includes(intent)) {
+    if (['expense_log', 'expense_query', 'general_question', 'reminder_set', 'reminder_query'].includes(intent)) {
       return intent;
     }
     return 'general_question';
@@ -111,58 +117,120 @@ Mensagem: "${message}"`,
     scheduledForText: string,
     isRecurring: boolean,
     systemPrompt: string,
-    phone: string
+    phone: string,
+    history: ConversationTurn[] = []
   ): Promise<string> {
     const prompt = `Acabei de agendar este lembrete para o usuário: "${reminderMessage}", para ${scheduledForText}${isRecurring ? ' (todos os dias nesse horário)' : ''}.
 
 Gere uma confirmação curta (2-3 frases) e calorosa em português confirmando o lembrete, mencionando especificamente do que se trata, e perguntando se o horário está bom ou se quer mudar. Não use colchetes nem "..." - gere o texto final pronto para enviar.`;
 
-    return this.callClaude(prompt, systemPrompt, phone, 'confirmReminder');
+    return this.callClaude(prompt, systemPrompt, phone, 'confirmReminder', history);
   }
 
-  async formatExpenseQuery(expenses: Expense[], question: string, phone: string): Promise<string> {
-    const expenseList = expenses
-      .map((e) => `R$${e.amount} em ${e.description}`)
-      .join(', ');
+  async formatExpenseQuery(
+    expenses: Expense[],
+    question: string,
+    phone: string,
+    systemPrompt?: string,
+    history: ConversationTurn[] = []
+  ): Promise<string> {
+    const expenseList = expenses.length
+      ? expenses.map((e) => `R$${e.amount} em ${e.description} (${new Date(e.created_at).toLocaleDateString('pt-BR')})`).join(', ')
+      : 'nenhum gasto registrado nesse período';
 
     return this.callClaude(
-      `O usuário perguntou: "${question}". Aqui estão seus gastos recentes: ${expenseList}. Responda de forma amigável em português (máximo 2 frases), terminando com uma pergunta de acompanhamento.`,
-      undefined,
+      `O usuário perguntou: "${question}". Aqui estão os gastos reais dele que eu tenho registrados: ${expenseList}. Responda de forma natural e amigável em português (máximo 2-3 frases), usando só esses dados reais - não invente valores. Pode terminar com uma pergunta de acompanhamento se fizer sentido, mas não é obrigatório.`,
+      systemPrompt,
       phone,
-      'formatExpenseQuery'
+      'formatExpenseQuery',
+      history
     );
   }
 
-  async answerGeneralQuestion(message: string, phone: string, systemPrompt?: string): Promise<string> {
-    return this.callClaude(message, systemPrompt, phone, 'answerGeneralQuestion');
+  /**
+   * Answers questions about reminders/compromissos the user ALREADY has
+   * scheduled (ex: "tenho algo marcado pra amanhã?"), grounded in the
+   * actual reminders table instead of leaving Claude to guess - which is
+   * what was happening before (there was no intent for this at all, so it
+   * fell through to answerGeneralQuestion with zero knowledge of reminders
+   * and would just say "não vejo nenhum" even with active reminders set).
+   */
+  async answerReminderQuery(
+    reminders: Reminder[],
+    question: string,
+    phone: string,
+    systemPrompt?: string,
+    history: ConversationTurn[] = []
+  ): Promise<string> {
+    const reminderList = reminders.length
+      ? reminders
+          .map((r) => {
+            const when = new Date(r.scheduled_for).toLocaleString('pt-BR', {
+              timeZone: 'America/Sao_Paulo',
+              weekday: 'short',
+              day: '2-digit',
+              month: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+            const recurring = r.type === 'recurring' ? ' (todos os dias nesse horário)' : '';
+            return `"${r.message}" em ${when}${recurring}`;
+          })
+          .join('; ')
+      : 'nenhum lembrete ou compromisso agendado no momento';
+
+    return this.callClaude(
+      `O usuário perguntou: "${question}". Aqui estão os lembretes/compromissos reais que eu tenho agendados para ele: ${reminderList}. Responda de forma natural e direta em português (máximo 2-3 frases) usando SÓ esses dados reais - se a lista estiver vazia, diga claramente que não há nada agendado; se houver algo relevante à pergunta, mencione especificamente o quê e quando.`,
+      systemPrompt,
+      phone,
+      'answerReminderQuery',
+      history
+    );
+  }
+
+  async answerGeneralQuestion(
+    message: string,
+    phone: string,
+    systemPrompt?: string,
+    history: ConversationTurn[] = []
+  ): Promise<string> {
+    return this.callClaude(message, systemPrompt, phone, 'answerGeneralQuestion', history);
   }
 
   private async callClaude(
     prompt: string,
     system: string | undefined,
     phone: string,
-    context: string
+    context: string,
+    history: ConversationTurn[] = []
   ): Promise<string> {
-    const response = await axios.post(
-      this.apiUrl,
-      {
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 400,
-        ...(system ? { system } : {}),
-        messages: [
+    const response = await retryWithBackoff(
+      () =>
+        axios.post(
+          this.apiUrl,
           {
-            role: 'user',
-            content: prompt
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 400,
+            ...(system ? { system } : {}),
+            messages: [
+              ...history.map((turn) => ({ role: turn.role, content: turn.content })),
+              {
+                role: 'user',
+                content: prompt
+              }
+            ]
+          },
+          {
+            headers: {
+              'anthropic-version': '2023-06-01',
+              'x-api-key': this.apiKey,
+              'content-type': 'application/json'
+            },
+            timeout: 20000
           }
-        ]
-      },
-      {
-        headers: {
-          'anthropic-version': '2023-06-01',
-          'x-api-key': this.apiKey,
-          'content-type': 'application/json'
-        }
-      }
+        ),
+      2,
+      500
     );
 
     const usage = response.data.usage;

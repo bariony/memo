@@ -1,4 +1,4 @@
-import { ClaudeService } from './claude.service.js';
+import { ClaudeService, ConversationTurn } from './claude.service.js';
 import { WhitelistService } from './whitelist.service.js';
 import { ExpenseService } from './expense.service.js';
 import { ReminderService } from './reminder.service.js';
@@ -49,15 +49,48 @@ export class MessageService {
   private reminderService = new ReminderService();
   private evolutionService = evolution;
 
-  private async logMessage(phone: string, messageText: string, intent: string | null): Promise<void> {
+  private async logMessage(
+    phone: string,
+    messageText: string,
+    intent: string | null,
+    responseText?: string
+  ): Promise<void> {
     try {
       const pool = getDatabase();
       await pool.query(
-        'INSERT INTO message_logs (phone_number, message_text, intent) VALUES ($1, $2, $3)',
-        [phone, messageText, intent]
+        'INSERT INTO message_logs (phone_number, message_text, intent, response_text) VALUES ($1, $2, $3, $4)',
+        [phone, messageText, intent, responseText ?? null]
       );
     } catch (err) {
       console.error('Failed to log message:', err);
+    }
+  }
+
+  /**
+   * Last few turns of this conversation, oldest first, so Claude actually
+   * has short-term memory instead of treating every message as the first
+   * one ever sent - which is what made follow-up questions ("e sobre o que
+   * eu perguntei antes?") get answered with a blank restart of the pitch.
+   */
+  private async getRecentHistory(phone: string, limit: number = 6): Promise<ConversationTurn[]> {
+    try {
+      const pool = getDatabase();
+      const result = await pool.query(
+        `SELECT message_text, response_text FROM message_logs
+         WHERE phone_number = $1 AND response_text IS NOT NULL
+         ORDER BY created_at DESC LIMIT $2`,
+        [phone, limit]
+      );
+
+      const turns: ConversationTurn[] = [];
+      for (const row of result.rows.reverse()) {
+        turns.push({ role: 'user', content: row.message_text });
+        turns.push({ role: 'assistant', content: row.response_text });
+      }
+      return turns;
+    } catch (err) {
+      console.error('Failed to load conversation history:', err);
+      return [];
     }
   }
 
@@ -105,7 +138,7 @@ export class MessageService {
 
           const msg = `${greeting.trim()}\n\nAntes de começar, como posso te chamar? 😊`;
           await this.evolutionService.sendMessage(phone, msg);
-          await this.logMessage(phone, messageText, 'name_request');
+          await this.logMessage(phone, messageText, 'name_request', msg);
           return msg;
         }
 
@@ -114,7 +147,7 @@ export class MessageService {
 
         const msg = `Prazer em te conhecer, ${name}! 🤝\n\nA partir de agora sou seu amigo pessoal de bolso — pode contar comigo pra registrar gastos, lembrar de compromissos, tirar dúvidas e te ajudar no dia a dia. 💪\n\nManda aí o que precisar!`;
         await this.evolutionService.sendMessage(phone, msg);
-        await this.logMessage(phone, messageText, 'name_capture');
+        await this.logMessage(phone, messageText, 'name_capture', msg);
         return msg;
       }
 
@@ -127,7 +160,7 @@ export class MessageService {
       if (restrictionType) {
         const response = getSmartResponse(restrictionType, phone);
         await this.evolutionService.sendMessage(phone, response);
-        await this.logMessage(phone, messageText, `restricted:${restrictionType}`);
+        await this.logMessage(phone, messageText, `restricted:${restrictionType}`, response);
         return response;
       }
 
@@ -142,6 +175,10 @@ export class MessageService {
       // 6. Detect intent
       const intent = await this.claudeService.detectIntent(messageText, phone);
 
+      // Short-term memory: last few turns, so the conversation actually
+      // flows instead of restarting from zero on every single message.
+      const history = await this.getRecentHistory(phone);
+
       let response: string;
 
       if (intent === 'expense_log') {
@@ -154,7 +191,10 @@ export class MessageService {
         response = withFollowUp(response);
       } else if (intent === 'expense_query') {
         const expenses = await this.expenseService.getRecentExpenses(phone, 7);
-        response = await this.claudeService.formatExpenseQuery(expenses, messageText, phone);
+        response = await this.claudeService.formatExpenseQuery(expenses, messageText, phone, systemPrompt, history);
+      } else if (intent === 'reminder_query') {
+        const reminders = await this.reminderService.getUpcomingReminders(phone);
+        response = await this.claudeService.answerReminderQuery(reminders, messageText, phone, systemPrompt, history);
       } else if (intent === 'reminder_set') {
         try {
           const parsed = await this.claudeService.parseReminder(messageText, phone);
@@ -166,19 +206,23 @@ export class MessageService {
             formatDateTime(scheduledFor),
             parsed.isRecurring,
             systemPrompt,
-            phone
+            phone,
+            history
           );
         } catch (err) {
           console.error('Reminder parsing failed:', err);
           response = 'Não consegui entender direito a data do lembrete. Pode tentar de novo? Ex: "lembrar de pagar conta amanhã às 10h" 😊';
         }
       } else {
-        response = await this.claudeService.answerGeneralQuestion(messageText, phone, systemPrompt);
+        response = await this.claudeService.answerGeneralQuestion(messageText, phone, systemPrompt, history);
       }
 
       // Send response
-      await this.evolutionService.sendMessage(phone, response);
-      await this.logMessage(phone, messageText, intent);
+      const delivered = await this.evolutionService.sendMessage(phone, response);
+      if (!delivered) {
+        console.error(`WhatsApp delivery failed for ${phone} - message was processed but never reached the user`);
+      }
+      await this.logMessage(phone, messageText, intent, response);
       return response;
     } catch (error) {
       console.error('Message processing error:', error);

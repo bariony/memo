@@ -47,7 +47,7 @@ export interface ClaudeParseReminder {
 }
 
 export interface MessageIntent {
-  intent: 'expense_log' | 'expense_query' | 'general_question' | 'reminder_set';
+  intent: 'expense_log' | 'expense_query' | 'general_question' | 'reminder_set' | 'reminder_query';
 }
 
 export interface AdminUser {

@@ -127,15 +127,17 @@ Desculpa o inconveniente! 🙏`,
 export function detectRestrictionType(message: string): keyof typeof RESTRICTION_RESPONSES | null {
   const lower = message.toLowerCase();
 
-  // Code patterns
+  // Code patterns - requires an action verb + the target, not just the
+  // bare word. Previously "código" or "programa" alone would match, which
+  // also fires on totally ordinary messages like "qual o código postal"
+  // or "vou ver um programa na tv" - derailing a normal conversation into
+  // a canned capability list instead of answering naturally.
+  const codeVerb = /(cria|gera|escreve|faz|manda)\s*(um|uma|o|a)?\s*(código|script|programa)\b/;
   if (
-    lower.includes('código') ||
-    lower.includes('code') ||
-    lower.includes('script') ||
-    lower.includes('programa') ||
-    lower.includes('python') ||
-    lower.includes('javascript') ||
-    lower.includes('typescript')
+    codeVerb.test(lower) ||
+    lower.includes('em python') ||
+    lower.includes('em javascript') ||
+    lower.includes('em typescript')
   ) {
     return 'code';
   }
@@ -148,24 +150,24 @@ export function detectRestrictionType(message: string): keyof typeof RESTRICTION
     return 'generation';
   }
 
-  // Company talk
+  // Company talk - specifically about Memo itself, not any mention of
+  // "empresa" (the user may well be talking about their OWN job/company).
   if (
-    lower.includes('empresa') ||
-    lower.includes('como você funciona') ||
-    lower.includes('quem criou') ||
-    lower.includes('estrutura') ||
-    lower.includes('roadmap')
+    (lower.includes('memo') && (lower.includes('empresa') || lower.includes('como você funciona') || lower.includes('por dentro'))) ||
+    lower.includes('quem criou você') ||
+    lower.includes('quem te criou') ||
+    lower.includes('seu roadmap')
   ) {
     return 'company';
   }
 
-  // Bypass attempts
+  // Bypass attempts - "segurança" alone is way too common in everyday
+  // Portuguese (financial security, job security, etc) to use as a trigger.
   if (
-    lower.includes('burla') ||
+    lower.includes('burlar') ||
     lower.includes('vulnerabilidade') ||
-    lower.includes('hack') ||
-    lower.includes('exploit') ||
-    lower.includes('segurança')
+    lower.includes('hackear') ||
+    lower.includes('exploit')
   ) {
     return 'bypass';
   }
