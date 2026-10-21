@@ -96,7 +96,14 @@ export class MessageService {
             'UPDATE users SET name_requested_at = NOW() WHERE phone_number = $1',
             [phone]
           );
-          const msg = 'Oi! 👋 Antes de começar, como posso te chamar?';
+
+          const greeting = assistantService.getGreetingMessage({
+            phone_number: phone,
+            permitted_until: access.permitted_until!,
+            status: 'active',
+          });
+
+          const msg = `${greeting.trim()}\n\nAntes de começar, como posso te chamar? 😊`;
           await this.evolutionService.sendMessage(phone, msg);
           await this.logMessage(phone, messageText, 'name_request');
           return msg;
@@ -105,7 +112,7 @@ export class MessageService {
         const name = extractName(messageText);
         await pool.query('UPDATE users SET name = $1 WHERE phone_number = $2', [name, phone]);
 
-        const msg = `Prazer, ${name}! 😊 Agora sim, vamos lá.${FOLLOW_UP}`;
+        const msg = `Prazer em te conhecer, ${name}! 🤝\n\nA partir de agora sou seu amigo pessoal de bolso — pode contar comigo pra registrar gastos, lembrar de compromissos, tirar dúvidas e te ajudar no dia a dia. 💪\n\nManda aí o que precisar!`;
         await this.evolutionService.sendMessage(phone, msg);
         await this.logMessage(phone, messageText, 'name_capture');
         return msg;
