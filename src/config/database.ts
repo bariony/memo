@@ -8,7 +8,16 @@ let poolInstance: pg.Pool | null = null;
 export function getDatabase(): pg.Pool {
   if (!poolInstance) {
     poolInstance = new pg.Pool({
-      connectionString: env.DATABASE_URL
+      connectionString: env.DATABASE_URL,
+      // node-postgres defaults to max: 10, which is fine for a couple of
+      // users but becomes a real queueing bottleneck ("engasga") as more
+      // people message concurrently, since each message does several
+      // sequential queries. connectionTimeoutMillis makes that failure
+      // mode fast and visible instead of a request just hanging forever
+      // when the pool is exhausted.
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
     });
 
     // Without this, an error on an idle client (a dropped connection, a
