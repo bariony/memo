@@ -1,5 +1,7 @@
 export interface User {
   phone_number: string;
+  name?: string;
+  name_requested_at?: Date;
   created_at: Date;
   updated_at: Date;
 }
@@ -36,6 +38,12 @@ export interface Reminder {
 export interface ClaudeParseExpense {
   amount: number;
   description: string;
+}
+
+export interface ClaudeParseReminder {
+  scheduledFor: string; // ISO 8601 datetime
+  message: string;
+  isRecurring: boolean;
 }
 
 export interface MessageIntent {

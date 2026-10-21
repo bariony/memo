@@ -32,4 +32,34 @@ export class ExpenseService {
 
     return result.rows;
   }
+
+  async getTodayTotal(phone: string): Promise<{ total: number; count: number }> {
+    const pool = getDatabase();
+    const result = await pool.query(
+      `SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
+       FROM expenses
+       WHERE phone_number = $1 AND created_at >= CURRENT_DATE`,
+      [phone]
+    );
+
+    return {
+      total: parseFloat(result.rows[0].total),
+      count: parseInt(result.rows[0].count)
+    };
+  }
+
+  async getMonthTotal(phone: string): Promise<{ total: number; count: number }> {
+    const pool = getDatabase();
+    const result = await pool.query(
+      `SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS count
+       FROM expenses
+       WHERE phone_number = $1 AND created_at >= DATE_TRUNC('month', CURRENT_DATE)`,
+      [phone]
+    );
+
+    return {
+      total: parseFloat(result.rows[0].total),
+      count: parseInt(result.rows[0].count)
+    };
+  }
 }

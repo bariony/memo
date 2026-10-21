@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { getEnv } from '../config/env.js';
-import { Expense, ClaudeParseExpense } from '../types/index.js';
+import { Expense, ClaudeParseExpense, ClaudeParseReminder } from '../types/index.js';
 
 const env = getEnv();
 
@@ -61,6 +61,32 @@ Mensagem: "${message}"`
     return {
       amount: parseFloat(parsed.amount),
       description: parsed.description
+    };
+  }
+
+  async parseReminder(message: string): Promise<ClaudeParseReminder> {
+    const now = new Date();
+    const nowIso = now.toISOString();
+
+    const response = await this.callClaude(
+      `Data e hora atual: ${nowIso} (fuso America/Sao_Paulo).
+
+Extraia dessa mensagem de lembrete: a data/hora agendada (scheduledFor, em ISO 8601, resolvendo expressões relativas como "amanhã" ou "sexta" a partir da data atual acima), o texto do lembrete (message, sem a parte de data/hora) e se é recorrente diário (isRecurring, true se a mensagem falar de algo "todo dia", "todos os dias", "diariamente", etc).
+
+Responda APENAS com o JSON, sem nenhum texto antes ou depois: {"scheduledFor": "...", "message": "...", "isRecurring": false}
+
+Mensagem: "${message}"`
+    );
+
+    const parsed = extractJson(response);
+    if (!parsed || !parsed.scheduledFor || !parsed.message) {
+      throw new Error(`Failed to parse reminder: ${response}`);
+    }
+
+    return {
+      scheduledFor: parsed.scheduledFor,
+      message: parsed.message,
+      isRecurring: Boolean(parsed.isRecurring)
     };
   }
 
