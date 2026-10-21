@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { getEnv } from '../config/env.js';
+import { getDatabase } from '../config/database.js';
 import { Expense, ClaudeParseExpense, ClaudeParseReminder } from '../types/index.js';
 
 const env = getEnv();
@@ -32,11 +33,14 @@ export class ClaudeService {
   private apiKey = env.CLAUDE_API_KEY;
   private apiUrl = 'https://api.anthropic.com/v1/messages';
 
-  async detectIntent(message: string): Promise<string> {
+  async detectIntent(message: string, phone: string): Promise<string> {
     const response = await this.callClaude(
       `Analise essa mensagem e categorize como 'expense_log', 'expense_query', 'general_question' ou 'reminder_set'. Responda APENAS a categoria (uma palavra).
 
-Mensagem: "${message}"`
+Mensagem: "${message}"`,
+      undefined,
+      phone,
+      'detectIntent'
     );
 
     const intent = response.toLowerCase().trim();
@@ -46,11 +50,14 @@ Mensagem: "${message}"`
     return 'general_question';
   }
 
-  async parseExpense(message: string): Promise<ClaudeParseExpense> {
+  async parseExpense(message: string, phone: string): Promise<ClaudeParseExpense> {
     const response = await this.callClaude(
       `Extraia o valor (amount) e descrição (description) dessa mensagem de gasto. Responda APENAS com o JSON, sem nenhum texto antes ou depois: {"amount": X, "description": "..."}
 
-Mensagem: "${message}"`
+Mensagem: "${message}"`,
+      undefined,
+      phone,
+      'parseExpense'
     );
 
     const parsed = extractJson(response);
@@ -64,7 +71,7 @@ Mensagem: "${message}"`
     };
   }
 
-  async parseReminder(message: string): Promise<ClaudeParseReminder> {
+  async parseReminder(message: string, phone: string): Promise<ClaudeParseReminder> {
     const now = new Date();
     const nowIso = now.toISOString();
 
@@ -75,7 +82,10 @@ Extraia dessa mensagem de lembrete: a data/hora agendada (scheduledFor, em ISO 8
 
 Responda APENAS com o JSON, sem nenhum texto antes ou depois: {"scheduledFor": "...", "message": "...", "isRecurring": false}
 
-Mensagem: "${message}"`
+Mensagem: "${message}"`,
+      undefined,
+      phone,
+      'parseReminder'
     );
 
     const parsed = extractJson(response);
@@ -90,21 +100,49 @@ Mensagem: "${message}"`
     };
   }
 
-  async formatExpenseQuery(expenses: Expense[], question: string): Promise<string> {
+  /**
+   * Generate a warm, specific confirmation for a reminder that was just
+   * scheduled - references what the reminder is about (not just a flat
+   * "lembrete criado") and offers to adjust the time, matching the
+   * assistant's conversational personality.
+   */
+  async confirmReminder(
+    reminderMessage: string,
+    scheduledForText: string,
+    isRecurring: boolean,
+    systemPrompt: string,
+    phone: string
+  ): Promise<string> {
+    const prompt = `Acabei de agendar este lembrete para o usuário: "${reminderMessage}", para ${scheduledForText}${isRecurring ? ' (todos os dias nesse horário)' : ''}.
+
+Gere uma confirmação curta (2-3 frases) e calorosa em português confirmando o lembrete, mencionando especificamente do que se trata, e perguntando se o horário está bom ou se quer mudar. Não use colchetes nem "..." - gere o texto final pronto para enviar.`;
+
+    return this.callClaude(prompt, systemPrompt, phone, 'confirmReminder');
+  }
+
+  async formatExpenseQuery(expenses: Expense[], question: string, phone: string): Promise<string> {
     const expenseList = expenses
       .map((e) => `R$${e.amount} em ${e.description}`)
       .join(', ');
 
     return this.callClaude(
-      `O usuário perguntou: "${question}". Aqui estão seus gastos recentes: ${expenseList}. Responda de forma amigável em português (máximo 2 frases).`
+      `O usuário perguntou: "${question}". Aqui estão seus gastos recentes: ${expenseList}. Responda de forma amigável em português (máximo 2 frases), terminando com uma pergunta de acompanhamento.`,
+      undefined,
+      phone,
+      'formatExpenseQuery'
     );
   }
 
-  async answerGeneralQuestion(message: string, systemPrompt?: string): Promise<string> {
-    return this.callClaude(message, systemPrompt);
+  async answerGeneralQuestion(message: string, phone: string, systemPrompt?: string): Promise<string> {
+    return this.callClaude(message, systemPrompt, phone, 'answerGeneralQuestion');
   }
 
-  private async callClaude(prompt: string, system?: string): Promise<string> {
+  private async callClaude(
+    prompt: string,
+    system: string | undefined,
+    phone: string,
+    context: string
+  ): Promise<string> {
     const response = await axios.post(
       this.apiUrl,
       {
@@ -127,6 +165,22 @@ Mensagem: "${message}"`
       }
     );
 
+    const usage = response.data.usage;
+    if (usage) {
+      const tokensConsumed = (usage.input_tokens || 0) + (usage.output_tokens || 0);
+      this.logTokenUsage(phone, tokensConsumed, context).catch((err) =>
+        console.error('Failed to log token usage:', err)
+      );
+    }
+
     return response.data.content[0].text.trim();
+  }
+
+  private async logTokenUsage(phone: string, tokensConsumed: number, context: string): Promise<void> {
+    const pool = getDatabase();
+    await pool.query(
+      'INSERT INTO token_usage (phone_number, tokens_consumed, context) VALUES ($1, $2, $3)',
+      [phone, tokensConsumed, context]
+    );
   }
 }

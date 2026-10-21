@@ -37,12 +37,29 @@ function formatDateTime(date: Date): string {
   });
 }
 
+/** Appends the follow-up question unless the response already ends with one. */
+function withFollowUp(response: string): string {
+  return response.trim().endsWith('?') ? response : response + FOLLOW_UP;
+}
+
 export class MessageService {
   private claudeService = new ClaudeService();
   private whitelistService = new WhitelistService();
   private expenseService = new ExpenseService();
   private reminderService = new ReminderService();
   private evolutionService = evolution;
+
+  private async logMessage(phone: string, messageText: string, intent: string | null): Promise<void> {
+    try {
+      const pool = getDatabase();
+      await pool.query(
+        'INSERT INTO message_logs (phone_number, message_text, intent) VALUES ($1, $2, $3)',
+        [phone, messageText, intent]
+      );
+    } catch (err) {
+      console.error('Failed to log message:', err);
+    }
+  }
 
   async processMessage(phone: string, messageText: string): Promise<string> {
     try {
@@ -79,6 +96,7 @@ export class MessageService {
           );
           const msg = 'Oi! 👋 Antes de começar, como posso te chamar?';
           await this.evolutionService.sendMessage(phone, msg);
+          await this.logMessage(phone, messageText, 'name_request');
           return msg;
         }
 
@@ -87,6 +105,7 @@ export class MessageService {
 
         const msg = `Prazer, ${name}! 😊 Agora sim, vamos lá.${FOLLOW_UP}`;
         await this.evolutionService.sendMessage(phone, msg);
+        await this.logMessage(phone, messageText, 'name_capture');
         return msg;
       }
 
@@ -99,6 +118,7 @@ export class MessageService {
       if (restrictionType) {
         const response = getSmartResponse(restrictionType, phone);
         await this.evolutionService.sendMessage(phone, response);
+        await this.logMessage(phone, messageText, `restricted:${restrictionType}`);
         return response;
       }
 
@@ -111,40 +131,45 @@ export class MessageService {
       });
 
       // 6. Detect intent
-      const intent = await this.claudeService.detectIntent(messageText);
+      const intent = await this.claudeService.detectIntent(messageText, phone);
 
       let response: string;
 
       if (intent === 'expense_log') {
-        const parsed = await this.claudeService.parseExpense(messageText);
+        const parsed = await this.claudeService.parseExpense(messageText, phone);
         await this.expenseService.logExpense(phone, parsed.amount, parsed.description);
         const today = await this.expenseService.getTodayTotal(phone);
 
         response = `✓ Anotei: R$${parsed.amount.toFixed(2)} em ${parsed.description}\n`;
         response += `Hoje você já registrou ${today.count} despesa${today.count !== 1 ? 's' : ''}, totalizando R$${today.total.toFixed(2)}.`;
-        response += FOLLOW_UP;
+        response = withFollowUp(response);
       } else if (intent === 'expense_query') {
         const expenses = await this.expenseService.getRecentExpenses(phone, 7);
-        response = await this.claudeService.formatExpenseQuery(expenses, messageText);
+        response = await this.claudeService.formatExpenseQuery(expenses, messageText, phone);
       } else if (intent === 'reminder_set') {
         try {
-          const parsed = await this.claudeService.parseReminder(messageText);
+          const parsed = await this.claudeService.parseReminder(messageText, phone);
           const scheduledFor = new Date(parsed.scheduledFor);
           await this.reminderService.scheduleReminder(phone, scheduledFor, parsed.message, parsed.isRecurring);
 
-          response = `✓ Lembrete criado: "${parsed.message}"\n`;
-          response += `Vou te avisar em ${formatDateTime(scheduledFor)}${parsed.isRecurring ? ', todos os dias neste horário' : ''}.`;
-          response += FOLLOW_UP;
+          response = await this.claudeService.confirmReminder(
+            parsed.message,
+            formatDateTime(scheduledFor),
+            parsed.isRecurring,
+            systemPrompt,
+            phone
+          );
         } catch (err) {
           console.error('Reminder parsing failed:', err);
           response = 'Não consegui entender direito a data do lembrete. Pode tentar de novo? Ex: "lembrar de pagar conta amanhã às 10h" 😊';
         }
       } else {
-        response = await this.claudeService.answerGeneralQuestion(messageText, systemPrompt);
+        response = await this.claudeService.answerGeneralQuestion(messageText, phone, systemPrompt);
       }
 
       // Send response
       await this.evolutionService.sendMessage(phone, response);
+      await this.logMessage(phone, messageText, intent);
       return response;
     } catch (error) {
       console.error('Message processing error:', error);

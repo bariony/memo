@@ -13,7 +13,7 @@ router.get('/users', requireAuth, async (req, res) => {
     SELECT
       DATE(created_at) as date,
       COUNT(*) as new_count,
-      COUNT(*) OVER (ORDER BY DATE(created_at)) as cumulative_count
+      SUM(COUNT(*)) OVER (ORDER BY DATE(created_at)) as cumulative_count
     FROM users
     WHERE created_at > NOW() - INTERVAL '1 day' * $1
     GROUP BY DATE(created_at)
