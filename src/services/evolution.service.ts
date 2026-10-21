@@ -15,6 +15,25 @@ interface EvolutionMessage {
 }
 
 /**
+ * A human-ish "typing" delay before sending: a short "thinking" pause plus
+ * extra time scaled to the message's length, capped so long replies don't
+ * make the user wait forever. Evolution API's sendText takes this directly
+ * as `delay` (ms) and handles the composing/paused presence dance itself -
+ * confirmed against its own source (whatsapp.baileys.service.ts), not
+ * something this app has to orchestrate by calling a separate endpoint.
+ *
+ * This isn't just cosmetic: an account that always replies instantly, at a
+ * constant latency, is a classic bot fingerprint, and WhatsApp numbers
+ * running unofficial automation (which is what Evolution API/Baileys is)
+ * get banned partly on exactly that kind of pattern.
+ */
+function computeTypingDelayMs(message: string): number {
+  const thinking = 600 + Math.random() * 1200; // 0.6-1.8s
+  const typing = Math.min(message.length * 18, 4000); // ~55 chars/s, capped at 4s
+  return Math.round(thinking + typing);
+}
+
+/**
  * Send message via Evolution API / WhatsApp
  */
 export async function sendMessage(phoneNumber: string, message: string): Promise<boolean> {
@@ -43,6 +62,8 @@ export async function sendMessage(phoneNumber: string, message: string): Promise
     // swallowed its own errors and returned false, and nothing upstream
     // checked that return value, so a flaky send just meant total silence
     // for the user with no retry and no visibility.
+    const typingDelayMs = computeTypingDelayMs(message);
+
     let lastError: unknown;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
@@ -55,8 +76,12 @@ export async function sendMessage(phoneNumber: string, message: string): Promise
           body: JSON.stringify({
             number: cleanPhone,
             text: message,
+            delay: typingDelayMs,
           }),
-          signal: AbortSignal.timeout(10000),
+          // The request itself takes roughly typingDelayMs to resolve,
+          // since Evolution API waits server-side before sending - so the
+          // timeout needs real headroom above the largest possible delay.
+          signal: AbortSignal.timeout(typingDelayMs + 10000),
         });
 
         if (!response.ok) {
@@ -67,7 +92,7 @@ export async function sendMessage(phoneNumber: string, message: string): Promise
         logger.info(
           'WhatsApp message sent successfully',
           'EvolutionService',
-          { phoneNumber: cleanPhone, messageLength: message.length, attempt }
+          { phoneNumber: cleanPhone, messageLength: message.length, attempt, typingDelayMs }
         );
 
         return true;
