@@ -1,11 +1,14 @@
 import { getDatabase } from '../config/database.js';
 import { redis, connectRedis } from '../config/redis.js';
 import { WhitelistEntry } from '../types/index.js';
+import { normalizePhone } from '../utils/validator.js';
 
 export class WhitelistService {
   private readonly CACHE_TTL = 86400; // 24 hours in seconds
 
-  async validateAccess(phone: string): Promise<{ authorized: boolean; reason?: string }> {
+  async validateAccess(phoneRaw: string): Promise<{ authorized: boolean; reason?: string }> {
+    const phone = normalizePhone(phoneRaw);
+
     // Check Redis cache first
     // redis client already imported
     const cached = await redis.get(`whitelist:${phone}`);
@@ -42,7 +45,8 @@ export class WhitelistService {
     return { authorized: true };
   }
 
-  async addUser(phone: string, permitted_until: Date): Promise<void> {
+  async addUser(phoneRaw: string, permitted_until: Date): Promise<void> {
+    const phone = normalizePhone(phoneRaw);
     const pool = getDatabase();
 
     // Create user if not exists
@@ -62,7 +66,8 @@ export class WhitelistService {
     await redis.del(`whitelist:${phone}`);
   }
 
-  async revokeUser(phone: string): Promise<void> {
+  async revokeUser(phoneRaw: string): Promise<void> {
+    const phone = normalizePhone(phoneRaw);
     const pool = getDatabase();
     await pool.query(
       'UPDATE whitelist SET status = $1, updated_at = NOW() WHERE phone_number = $2',
@@ -74,7 +79,8 @@ export class WhitelistService {
     await redis.del(`whitelist:${phone}`);
   }
 
-  async updateExpiration(phone: string, new_date: Date): Promise<void> {
+  async updateExpiration(phoneRaw: string, new_date: Date): Promise<void> {
+    const phone = normalizePhone(phoneRaw);
     const pool = getDatabase();
     await pool.query(
       'UPDATE whitelist SET permitted_until = $1, updated_at = NOW() WHERE phone_number = $2',

@@ -1,5 +1,32 @@
 import { z, ZodSchema, ZodError } from 'zod';
 
+/**
+ * Normalize a Brazilian phone number to the canonical format used
+ * everywhere in the system: digits only, always prefixed with country
+ * code 55. This is what WhatsApp's remoteJid (via Evolution API) naturally
+ * produces, so every other entry point (admin panel, APIs) must convert
+ * to this same shape before writing to or querying the database -
+ * otherwise "11 98668-3737" (admin-entered) and "5511986683737"
+ * (WhatsApp-derived) are treated as different users.
+ */
+export function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+
+  // Already has country code (13 digits: 55 + DDD + 9-digit mobile)
+  if (digits.length === 13 && digits.startsWith('55')) {
+    return digits;
+  }
+
+  // Local format without country code (11 digits: DDD + 9-digit mobile)
+  if (digits.length === 11) {
+    return `55${digits}`;
+  }
+
+  // Fallback: return digits as-is (covers edge cases like group JIDs
+  // or malformed input - validation elsewhere should catch these)
+  return digits;
+}
+
 // Reusable schemas
 export const schemas = {
   // Auth
