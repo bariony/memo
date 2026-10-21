@@ -269,7 +269,10 @@ async function addUser() {
       body: JSON.stringify({ phone, permitted_until: correctedDate })
     });
 
-    if (!res.ok) throw new Error('Add user failed');
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Add user failed');
+    }
 
     document.getElementById('add-phone').value = '';
     document.getElementById('add-expiry').value = '';
@@ -277,7 +280,7 @@ async function addUser() {
     loadDashboard();
     showToast('Usuário adicionado com sucesso!');
   } catch (err) {
-    showToast('Erro ao adicionar usuário', '❌');
+    showToast(err.message || 'Erro ao adicionar usuário', '❌');
     console.error(err);
   }
 }
@@ -447,6 +450,13 @@ function updateCount() {
 
 function formatPhoneInput(input) {
   let value = input.value.replace(/\D/g, '');
+
+  // If the user typed/pasted the country code (55) and that pushed the
+  // total over 11 digits, strip it - this field only takes the local
+  // DDD+number; 55 is added automatically when saving.
+  if (value.length > 11 && value.startsWith('55')) {
+    value = value.substring(2);
+  }
 
   if (value.length > 11) {
     value = value.substring(0, 11);

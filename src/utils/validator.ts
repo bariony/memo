@@ -27,6 +27,21 @@ export function normalizePhone(phone: string): string {
   return digits;
 }
 
+/**
+ * True if the given phone, after normalization, is a well-formed
+ * Brazilian WhatsApp number: 55 + 2-digit DDD + 9-digit mobile (13 digits
+ * total), with the mobile number's first digit being 9.
+ */
+export function isValidNormalizedPhone(phone: string): boolean {
+  const normalized = normalizePhone(phone);
+  if (!/^\d{13}$/.test(normalized) || !normalized.startsWith('55')) {
+    return false;
+  }
+  const ddd = parseInt(normalized.substring(2, 4));
+  if (ddd < 11 || ddd > 99) return false;
+  return normalized[4] === '9';
+}
+
 // Reusable schemas
 export const schemas = {
   // Auth

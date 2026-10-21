@@ -3,6 +3,7 @@ import { WhitelistService } from '../services/whitelist.service.js';
 import { requireAuth, generateAdminToken } from '../middleware/auth.js';
 import { getEnv } from '../config/env.js';
 import { getDatabase } from '../config/database.js';
+import { isValidNormalizedPhone } from '../utils/validator.js';
 
 const router = Router();
 const whitelistService = new WhitelistService();
@@ -37,6 +38,10 @@ router.post('/admin/whitelist', requireAuth, async (req: Request, res: Response)
 
     if (!phone || !permitted_until) {
       return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    if (!isValidNormalizedPhone(phone)) {
+      return res.status(400).json({ error: 'Número de WhatsApp inválido' });
     }
 
     await whitelistService.addUser(phone, new Date(permitted_until));
