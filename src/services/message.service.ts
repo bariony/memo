@@ -67,8 +67,10 @@ export class MessageService {
       const access = await this.whitelistService.validateAccess(phone);
       if (!access.authorized) {
         const msg = access.reason === 'expired'
-          ? 'Sua licença expirou. Para não perder seu histórico de gastos, fale com Igor para renovar.'
-          : 'Você precisa falar com o administrador do sistema: (11) 986683737';
+          ? 'Oi! 👋 Eu sou o Memo, seu assistente pessoal.\n\nVi que seu acesso expirou. Para continuar comigo e não perder seu histórico de gastos e lembretes, fala com o Igor para renovar: 📞 11 98668-3737\n\nAssim que renovar, volto a te ajudar! 😊'
+          : access.reason === 'revoked'
+          ? 'Oi! 👋 Eu sou o Memo, seu assistente pessoal.\n\nSeu acesso foi desativado por aqui. Se quiser voltar a usar, fala com o Igor: 📞 11 98668-3737 😊'
+          : 'Oi! 👋 Eu sou o Memo, seu assistente pessoal.\n\nVi que você ainda não tem acesso liberado por aqui. Gostaria de ter acesso? É só falar com o Igor: 📞 11 98668-3737 😊';
 
         await this.evolutionService.sendMessage(phone, msg);
         return msg;
