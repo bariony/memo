@@ -15,9 +15,10 @@ export class ExpenseService {
 
   async getRecentExpenses(phone: string, days: number = 7): Promise<Expense[]> {
     const pool = getDatabase();
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const result = await pool.query(
-      'SELECT id, phone_number, amount, description, category, created_at FROM expenses WHERE phone_number = $1 AND created_at >= NOW() - INTERVAL \'$2 days\' ORDER BY created_at DESC',
-      [phone, days]
+      'SELECT id, phone_number, amount, description, category, created_at FROM expenses WHERE phone_number = $1 AND created_at >= $2 ORDER BY created_at DESC',
+      [phone, cutoff]
     );
 
     return result.rows;
