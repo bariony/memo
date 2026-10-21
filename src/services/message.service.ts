@@ -2,12 +2,16 @@ import { ClaudeService, ConversationTurn } from './claude.service.js';
 import { WhitelistService } from './whitelist.service.js';
 import { ExpenseService } from './expense.service.js';
 import { ReminderService } from './reminder.service.js';
+import { accessRequestService } from './accessRequest.service.js';
 import { evolution } from './evolution.service.js';
 import { getDatabase } from '../config/database.js';
+import { getEnv } from '../config/env.js';
 import { assistantService } from './assistant.service.js';
 import { detectRestrictionType, getSmartResponse } from '../config/assistantResponses.js';
+import { normalizePhone } from '../utils/validator.js';
 
 const FOLLOW_UP = '\n\nPosso ajudar com mais alguma coisa? 😊';
+const TRIAL_DAYS = 14;
 
 /**
  * Extract a first name from a free-text reply to "qual é o seu nome?".
@@ -94,16 +98,128 @@ export class MessageService {
     }
   }
 
+  /**
+   * The admin's own WhatsApp number gets a special command path so he can
+   * approve/deny access requests by just replying "aprovar <numero>" or
+   * "negar <numero>" to the notification Memo sends him - no need to open
+   * the admin panel for the common case.
+   */
+  private async handleAdminCommand(messageText: string): Promise<string | null> {
+    const approveMatch = messageText.match(/^\s*aprovar\s+(\S+)/i);
+    const denyMatch = messageText.match(/^\s*negar\s+(\S+)/i);
+    if (!approveMatch && !denyMatch) return null;
+
+    const targetPhone = normalizePhone((approveMatch ?? denyMatch)![1]);
+    const request = await accessRequestService.findPendingByPhone(targetPhone);
+
+    if (approveMatch) {
+      const permittedUntil = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+      await this.whitelistService.addUser(targetPhone, permittedUntil);
+      if (request) await accessRequestService.resolve(request.id, 'approved');
+
+      const dateText = formatDateTime(permittedUntil).split(',')[0];
+      const userMsg = `🎉 Boas notícias! Seu acesso ao Memo foi liberado por ${TRIAL_DAYS} dias (até ${dateText}).\n\nPode mandar mensagem que já te ajudo! 😊`;
+      await this.evolutionService.sendMessage(targetPhone, userMsg);
+
+      const reply = request
+        ? `✅ Acesso liberado para ${request.name ?? targetPhone} (${targetPhone}) por ${TRIAL_DAYS} dias, até ${dateText}.`
+        : `✅ Acesso liberado para ${targetPhone} por ${TRIAL_DAYS} dias, até ${dateText} (não havia pedido pendente registrado para esse número).`;
+      await this.evolutionService.sendMessage(getEnv().ADMIN_PHONE_NUMBER, reply);
+      return reply;
+    }
+
+    // deny
+    if (request) await accessRequestService.resolve(request.id, 'denied');
+    const userMsg = 'Oi! Vi sua solicitação de acesso, mas não vou poder liberar dessa vez. Qualquer dúvida, é só chamar 😊';
+    await this.evolutionService.sendMessage(targetPhone, userMsg);
+
+    const reply = request
+      ? `🚫 Pedido de ${request.name ?? targetPhone} (${targetPhone}) negado.`
+      : `🚫 Marcado como negado para ${targetPhone} (não havia pedido pendente registrado para esse número).`;
+    await this.evolutionService.sendMessage(getEnv().ADMIN_PHONE_NUMBER, reply);
+    return reply;
+  }
+
+  /**
+   * A brand-new, never-seen number messaging the bot: asks for a name (so
+   * the admin notification is a person, not just a digit string), then
+   * opens an access request and pings the admin on WhatsApp - instead of
+   * just pointing the person at a phone number and leaving Igor with no
+   * idea anyone even tried.
+   */
+  private async handleNewContactRequest(phone: string, messageText: string): Promise<string> {
+    const pool = getDatabase();
+    await pool.query('INSERT INTO users (phone_number) VALUES ($1) ON CONFLICT DO NOTHING', [phone]);
+
+    const userResult = await pool.query(
+      'SELECT name, name_requested_at FROM users WHERE phone_number = $1',
+      [phone]
+    );
+    const user = userResult.rows[0] as { name: string | null; name_requested_at: Date | null };
+
+    if (!user.name) {
+      if (!user.name_requested_at) {
+        await pool.query('UPDATE users SET name_requested_at = NOW() WHERE phone_number = $1', [phone]);
+        const msg = 'Oi! 👋 Eu sou o Memo, assistente pessoal via WhatsApp.\n\nVi que você ainda não tem acesso por aqui, mas posso já encaminhar seu pedido de liberação. Como você se chama? 😊';
+        await this.evolutionService.sendMessage(phone, msg);
+        await this.logMessage(phone, messageText, 'access_request_name', msg);
+        return msg;
+      }
+
+      const name = extractName(messageText);
+      await pool.query('UPDATE users SET name = $1 WHERE phone_number = $2', [name, phone]);
+
+      const { isNew } = await accessRequestService.createIfNotPending(phone, name);
+      if (isNew) {
+        const adminMsg = `🔔 *Nova solicitação de acesso*\n\n👤 Nome: ${name}\n📱 WhatsApp: ${phone}\n\nResponda *aprovar ${phone}* para liberar ${TRIAL_DAYS} dias de teste, ou *negar ${phone}* para recusar.`;
+        await this.evolutionService.sendMessage(getEnv().ADMIN_PHONE_NUMBER, adminMsg);
+      }
+
+      const msg = `Prazer, ${name}! 🙌 Já encaminhei seu pedido de acesso. Assim que for liberado, te aviso por aqui e já podemos começar!`;
+      await this.evolutionService.sendMessage(phone, msg);
+      await this.logMessage(phone, messageText, 'access_request_created', msg);
+      return msg;
+    }
+
+    // Name already known - this person already went through the flow once
+    // (pending, or previously denied and trying again). Don't re-notify
+    // the admin on every repeat message, just reassure them.
+    const pending = await accessRequestService.findPendingByPhone(phone);
+    const msg = pending
+      ? `Oi, ${user.name}! Seu pedido de acesso ainda está aguardando liberação do administrador. Assim que for aprovado, te aviso por aqui 😊`
+      : `Oi, ${user.name}! Vou encaminhar seu pedido de acesso de novo para o administrador.`;
+
+    if (!pending) {
+      await accessRequestService.createIfNotPending(phone, user.name);
+      const adminMsg = `🔔 *Nova solicitação de acesso*\n\n👤 Nome: ${user.name}\n📱 WhatsApp: ${phone}\n\nResponda *aprovar ${phone}* para liberar ${TRIAL_DAYS} dias de teste, ou *negar ${phone}* para recusar.`;
+      await this.evolutionService.sendMessage(getEnv().ADMIN_PHONE_NUMBER, adminMsg);
+    }
+
+    await this.evolutionService.sendMessage(phone, msg);
+    await this.logMessage(phone, messageText, 'access_request_reminder', msg);
+    return msg;
+  }
+
   async processMessage(phone: string, messageText: string): Promise<string> {
     try {
+      // 0. Admin WhatsApp commands ("aprovar <numero>" / "negar <numero>")
+      // bypass everything else, whether or not the admin's own number is
+      // itself whitelisted.
+      if (normalizePhone(phone) === normalizePhone(getEnv().ADMIN_PHONE_NUMBER)) {
+        const adminReply = await this.handleAdminCommand(messageText);
+        if (adminReply !== null) return adminReply;
+      }
+
       // 1. Validate whitelist
       const access = await this.whitelistService.validateAccess(phone);
       if (!access.authorized) {
+        if (access.reason === 'not_found') {
+          return this.handleNewContactRequest(phone, messageText);
+        }
+
         const msg = access.reason === 'expired'
           ? 'Oi! 👋 Eu sou o Memo, seu assistente pessoal.\n\nVi que seu acesso expirou. Para continuar comigo e não perder seu histórico de gastos e lembretes, fala com o Igor para renovar: 📞 11 98668-3737\n\nAssim que renovar, volto a te ajudar! 😊'
-          : access.reason === 'revoked'
-          ? 'Oi! 👋 Eu sou o Memo, seu assistente pessoal.\n\nSeu acesso foi desativado por aqui. Se quiser voltar a usar, fala com o Igor: 📞 11 98668-3737 😊'
-          : 'Oi! 👋 Eu sou o Memo, seu assistente pessoal.\n\nVi que você ainda não tem acesso liberado por aqui. Gostaria de ter acesso? É só falar com o Igor: 📞 11 98668-3737 😊';
+          : 'Oi! 👋 Eu sou o Memo, seu assistente pessoal.\n\nSeu acesso foi desativado por aqui. Se quiser voltar a usar, fala com o Igor: 📞 11 98668-3737 😊';
 
         await this.evolutionService.sendMessage(phone, msg);
         return msg;

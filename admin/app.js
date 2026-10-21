@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (token) {
     showDashboard();
     loadWhitelist();
+    loadAccessRequests();
   } else {
     showLogin();
   }
@@ -124,6 +125,114 @@ async function loadDashboard() {
 
   // Load whitelist immediately without waiting for stats
   await loadWhitelist();
+  await loadAccessRequests();
+}
+
+// ============================================================================
+// ACCESS REQUESTS
+// ============================================================================
+
+async function loadAccessRequests() {
+  try {
+    const res = await fetch('/admin/access-requests', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!res.ok) throw new Error('Failed to load access requests');
+
+    const data = await res.json();
+    renderAccessRequests(data.requests || []);
+  } catch (err) {
+    console.error('Access requests load error:', err);
+  }
+}
+
+function renderAccessRequests(requests) {
+  const tbody = document.getElementById('access-requests-body');
+  const countEl = document.getElementById('access-requests-count');
+  if (countEl) countEl.textContent = requests.length;
+
+  if (!tbody) return;
+
+  if (!requests || requests.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4" style="text-align: center; color: var(--color-text-tertiary); padding: 40px;">
+          Nenhuma solicitação pendente
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = '';
+  requests.forEach((r) => {
+    const when = new Date(r.created_at).toLocaleString('pt-BR', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+    });
+
+    const row = tbody.insertRow();
+    row.innerHTML = `
+      <td>${r.name || '(sem nome)'}</td>
+      <td>${r.phone_number}</td>
+      <td>${when}</td>
+      <td>
+        <div class="table-actions">
+          <button class="btn-action" onclick="approveAccessRequest('${r.id}')">Aprovar (14d)</button>
+          <button class="btn-action revoke" onclick="denyAccessRequest('${r.id}')">Negar</button>
+        </div>
+      </td>
+    `;
+  });
+}
+
+async function approveAccessRequest(id) {
+  const ok = await confirmModal('Liberar 14 dias de teste para essa pessoa?', 'Aprovar acesso');
+  if (!ok) return;
+
+  try {
+    const res = await fetch(`/admin/access-requests/${encodeURIComponent(id)}/approve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ days: 14 })
+    });
+
+    if (!res.ok) throw new Error('Approve failed');
+
+    loadDashboard();
+    showToast('Acesso aprovado e usuário avisado no WhatsApp!');
+  } catch (err) {
+    showToast('Erro ao aprovar acesso', '❌');
+    console.error(err);
+  }
+}
+
+async function denyAccessRequest(id) {
+  const ok = await confirmModal('Negar essa solicitação de acesso?', 'Negar acesso');
+  if (!ok) return;
+
+  try {
+    const res = await fetch(`/admin/access-requests/${encodeURIComponent(id)}/deny`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!res.ok) throw new Error('Deny failed');
+
+    loadDashboard();
+    showToast('Solicitação negada');
+  } catch (err) {
+    showToast('Erro ao negar solicitação', '❌');
+    console.error(err);
+  }
+}
+
+function scrollToAccessRequests() {
+  const card = document.getElementById('access-requests-card');
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function loadWhitelist() {

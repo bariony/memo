@@ -54,3 +54,12 @@ export interface AdminUser {
   token: string;
   expiresAt: Date;
 }
+
+export interface AccessRequest {
+  id: string;
+  phone_number: string;
+  name: string | null;
+  status: 'pending' | 'approved' | 'denied';
+  created_at: Date;
+  resolved_at: Date | null;
+}

@@ -5,6 +5,7 @@ export interface Config {
   EVOLUTION_INSTANCE: string;
   EVOLUTION_API_KEY: string;
   ADMIN_PASSWORD: string;
+  ADMIN_PHONE_NUMBER: string;
   NODE_ENV: 'development' | 'production' | 'test';
   PORT: number;
 }
@@ -32,6 +33,11 @@ export function getEnv(): Config {
     EVOLUTION_INSTANCE: process.env.EVOLUTION_INSTANCE!,
     EVOLUTION_API_KEY: process.env.EVOLUTION_API_KEY!,
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD!,
+    // Not in `required`: this already had a working default (the number
+    // used in every static "fale com o administrador" message), so adding
+    // the access-request feature shouldn't force a Railway env var change
+    // before it can deploy.
+    ADMIN_PHONE_NUMBER: process.env.ADMIN_PHONE_NUMBER || '11986683737',
     NODE_ENV: (process.env.NODE_ENV || 'development') as any,
     PORT: parseInt(process.env.PORT || '3000', 10)
   };
