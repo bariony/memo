@@ -2,6 +2,7 @@ import { getDatabase } from '../config/database.js';
 import { redis, connectRedis } from '../config/redis.js';
 import { WhitelistEntry } from '../types/index.js';
 import { normalizePhone } from '../utils/validator.js';
+import { scheduleRenewalReminders } from '../workers/messaging.worker.js';
 
 export class WhitelistService {
   private readonly CACHE_TTL = 86400; // 24 hours in seconds
@@ -56,7 +57,7 @@ export class WhitelistService {
     return { authorized: true, permitted_until: entry.permitted_until };
   }
 
-  async addUser(phoneRaw: string, permitted_until: Date): Promise<void> {
+  async addUser(phoneRaw: string, permitted_until: Date, userName?: string): Promise<void> {
     const phone = normalizePhone(phoneRaw);
     const pool = getDatabase();
 
@@ -75,6 +76,20 @@ export class WhitelistService {
     // Invalidate cache
     // redis client already imported
     await redis.del(`whitelist:${phone}`);
+
+    // Renewal nudges 7/2/1 days before expiry - previously this
+    // infrastructure existed (BullMQ jobs, message templates) but nothing
+    // ever called it, so access would just silently lapse with no warning.
+    try {
+      let name = userName;
+      if (!name) {
+        const userRow = await pool.query('SELECT name FROM users WHERE phone_number = $1', [phone]);
+        name = userRow.rows[0]?.name ?? undefined;
+      }
+      await scheduleRenewalReminders(phone, permitted_until, name);
+    } catch (err) {
+      console.error('Failed to schedule renewal reminders:', err);
+    }
   }
 
   async revokeUser(phoneRaw: string): Promise<void> {

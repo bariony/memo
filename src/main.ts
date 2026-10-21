@@ -17,8 +17,6 @@ import adminRoutes from './routes/admin.js';
 import analyticsRoutes from './routes/analytics.js';
 import logsRoutes from './routes/logs.js';
 import alertsRoutes from './routes/alerts.js';
-import preferencesRoutes from './routes/preferences.js';
-import expensesRoutes from './routes/expenses.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const env = getEnv();
@@ -60,8 +58,6 @@ app.use('/', adminRoutes);
 app.use('/admin', analyticsRoutes);
 app.use('/admin', logsRoutes);
 app.use('/admin', alertsRoutes);
-app.use('/user', preferencesRoutes);
-app.use('/api', expensesRoutes);
 
 // Health check on root
 app.get('/', (req, res) => {

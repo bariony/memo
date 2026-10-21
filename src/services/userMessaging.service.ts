@@ -58,66 +58,40 @@ export function generateDailySummary(data: DailySummaryData): string {
   return message;
 }
 
+/** Admin contact number, formatted for display (e.g. "11 98668-3737"). */
+function adminPhoneDisplay(): string {
+  const digits = (process.env.ADMIN_PHONE_NUMBER || '11986683737').replace(/\D/g, '');
+  const local = digits.startsWith('55') ? digits.slice(2) : digits;
+  return `${local.slice(0, 2)} ${local.slice(2, 7)}-${local.slice(7, 11)}`;
+}
+
 /**
  * Generate renewal reminder message - 7 days before
+ *
+ * These used to be heavy-handed bullet-list pitches ending in a literal
+ * "*[Renovar agora]*" - bracketed text with no button or link behind it,
+ * since there's no in-app renewal flow. Kept short and natural instead,
+ * consistent with the rest of the assistant's tone.
  */
 export function generateRenewalReminder7Days(data: RenewalReminderData): string {
-  const { userName = 'você' } = data;
-
-  return `⏰ *Lembrete de Renovação*\n\n
-Olá${userName ? `, ${userName}` : ''}! 👋\n
-Seu plano Memo expira em *7 dias*.\n\n
-Para não perder todo o contexto histórico das suas despesas,
-lembretes e conversas, *renove agora* e continue com seu assistente! 🤖\n\n
-*Benefícios de renovar:*
-✓ Mantenha todo seu histórico
-✓ Continue recebendo resumos diários
-✓ Assistente personalizado para suas necessidades
-✓ Dicas de economia automáticas\n\n
-*[Renovar agora]* ou me avise se tiver dúvidas! 😊`;
+  const { userName } = data;
+  return `Oi${userName ? `, ${userName}` : ''}! 👋 Só um aviso: seu acesso ao Memo vence em 7 dias.\n\nSe quiser continuar comigo depois disso, é só falar com o Igor pra renovar: 📞 ${adminPhoneDisplay()} 😊`;
 }
 
 /**
  * Generate renewal reminder message - 2 days before
  */
 export function generateRenewalReminder2Days(data: RenewalReminderData): string {
-  const { userName = 'você' } = data;
-
-  return `⏰ *Aviso: Plano vence em 2 dias!*\n\n
-Olá${userName ? `, ${userName}` : ''}! ⚠️\n
-Seu plano expira em apenas *2 dias*.\n\n
-Não perca seu assistente pessoal e todo o histórico de:
-📊 Despesas
-📋 Lembretes
-💬 Conversas com seu assistente\n\n
-*Renove agora para continuar:*
-✓ Acompanhando seus gastos
-✓ Recebendo lembretes automáticos
-✓ Sendo ajudado em decisões do dia a dia\n\n
-*[Renovar agora]* — leva só 1 minuto! ⚡`;
+  const { userName } = data;
+  return `Oi${userName ? `, ${userName}` : ''}! Seu acesso ao Memo vence em 2 dias.\n\nPra não perder seu histórico de gastos e lembretes, fala com o Igor pra renovar: 📞 ${adminPhoneDisplay()}`;
 }
 
 /**
  * Generate renewal reminder message - 1 day before
  */
 export function generateRenewalReminder1Day(data: RenewalReminderData): string {
-  const { userName = 'você' } = data;
-
-  return `🚨 *ÚLTIMO DIA: Plano vence amanhã!*\n\n
-Oi${userName ? `, ${userName}` : ''}! 😱\n
-Seu plano Memo vence *amanhã*.\n\n
-Se não renovar, você vai perder:
-❌ Acesso ao assistente
-❌ Todo seu histórico de despesas
-❌ Lembretes pendentes
-❌ Conversas salvas\n\n
-*Renove AGORA para manter tudo:*
-✓ Seu assistente pessoal sempre disponível
-✓ Histórico completo de transações
-✓ Lembretes automáticos
-✓ Dicas personalizadas\n\n
-*[RENOVAR AGORA]* — ainda há tempo! ⏱️\n\n
-Qualquer dúvida, é só chamar! 💬`;
+  const { userName } = data;
+  return `Oi${userName ? `, ${userName}` : ''}! Último dia de acesso - vence amanhã.\n\nSe quiser continuar, chama o Igor: 📞 ${adminPhoneDisplay()}. Foi um prazer te ajudar até aqui! 😊`;
 }
 
 /**

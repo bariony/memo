@@ -72,7 +72,12 @@ class Logger {
       entry.metadata = metadata;
     }
 
-    // Console output (prettier for development)
+    // Console output - always, not just in development. This is a
+    // production app running on Railway, which captures stdout/stderr as
+    // its log viewer (`railway logs`); the file-based output below lands on
+    // an ephemeral filesystem that's wiped on every redeploy, so skipping
+    // console output outside "development" meant logger.error/warn/info
+    // were effectively invisible in production.
     if (this.isDevelopment) {
       const colors = {
         [LogLevel.ERROR]: '\x1b[31m', // Red
@@ -90,9 +95,13 @@ class Logger {
       if (error) output += ` | ${error}`;
 
       console.log(output);
+    } else {
+      const logFn = level === LogLevel.ERROR ? console.error : console.log;
+      logFn(this.formatLog(entry));
     }
 
-    // File output (always)
+    // File output (always) - kept for the admin panel's /admin/logs view
+    // within the lifetime of a single running container.
     this.writeToFile(entry);
   }
 

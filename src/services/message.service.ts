@@ -141,7 +141,7 @@ export class MessageService {
 
     if (approveMatch) {
       const permittedUntil = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
-      await this.whitelistService.addUser(targetPhone, permittedUntil);
+      await this.whitelistService.addUser(targetPhone, permittedUntil, request?.name ?? undefined);
       if (request) await accessRequestService.resolve(request.id, 'approved');
 
       const dateText = formatDateTime(permittedUntil).split(',')[0];

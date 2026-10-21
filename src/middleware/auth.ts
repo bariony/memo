@@ -8,12 +8,12 @@ export interface TokenPayload {
 }
 
 export function generateAdminToken(): string {
-  return jwt.sign({ admin: true }, env.ADMIN_PASSWORD, { expiresIn: '24h' });
+  return jwt.sign({ admin: true }, env.JWT_SECRET, { expiresIn: '24h' });
 }
 
 export function verifyAdminToken(token: string): TokenPayload {
   try {
-    return jwt.verify(token, env.ADMIN_PASSWORD) as TokenPayload;
+    return jwt.verify(token, env.JWT_SECRET) as TokenPayload;
   } catch (error) {
     throw new Error('Invalid or expired token');
   }

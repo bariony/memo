@@ -6,6 +6,7 @@ export interface Config {
   EVOLUTION_API_KEY: string;
   ADMIN_PASSWORD: string;
   ADMIN_PHONE_NUMBER: string;
+  JWT_SECRET: string;
   NODE_ENV: 'development' | 'production' | 'test';
   PORT: number;
 }
@@ -38,6 +39,11 @@ export function getEnv(): Config {
     // the access-request feature shouldn't force a Railway env var change
     // before it can deploy.
     ADMIN_PHONE_NUMBER: process.env.ADMIN_PHONE_NUMBER || '11986683737',
+    // Was previously ADMIN_PASSWORD reused as the JWT signing key, mixing a
+    // login secret with a cryptographic one. Falls back to ADMIN_PASSWORD
+    // so existing deployments keep working without a Railway env change,
+    // but a dedicated JWT_SECRET should be set for real security.
+    JWT_SECRET: process.env.JWT_SECRET || process.env.ADMIN_PASSWORD!,
     NODE_ENV: (process.env.NODE_ENV || 'development') as any,
     PORT: parseInt(process.env.PORT || '3000', 10)
   };

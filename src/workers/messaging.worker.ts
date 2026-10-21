@@ -151,9 +151,24 @@ export async function scheduleDailySummary(
 }
 
 /**
+ * Removes any previously-scheduled renewal reminders for this phone. Needed
+ * before (re)scheduling: BullMQ's queue.add() with a jobId that already
+ * exists just no-ops instead of updating the delay, so extending someone's
+ * access without this would leave the OLD expiry date's reminders firing.
+ */
+export async function cancelRenewalReminders(phoneNumber: string): Promise<void> {
+  await Promise.all([
+    messagingQueue.remove(`renewal-7d-${phoneNumber}`),
+    messagingQueue.remove(`renewal-2d-${phoneNumber}`),
+    messagingQueue.remove(`renewal-1d-${phoneNumber}`),
+  ]);
+}
+
+/**
  * Schedule renewal reminder (7, 2, 1 days before expiry)
  */
 export async function scheduleRenewalReminders(phoneNumber: string, expiryDate: Date, userName?: string) {
+  await cancelRenewalReminders(phoneNumber);
   const now = new Date();
 
   // 7 days before

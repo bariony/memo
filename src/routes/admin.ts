@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { timingSafeEqual } from 'crypto';
 import { WhitelistService } from '../services/whitelist.service.js';
 import { accessRequestService } from '../services/accessRequest.service.js';
 import { evolution } from '../services/evolution.service.js';
@@ -13,11 +14,19 @@ const whitelistService = new WhitelistService();
 const env = getEnv();
 const DEFAULT_TRIAL_DAYS = 14;
 
+/** Constant-time string comparison, so a wrong password can't be brute-forced faster via response-time differences. */
+function safeEquals(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
+
 // Auth endpoint
 router.post('/admin/auth', (req: Request, res: Response) => {
   const { password } = req.body;
 
-  if (password !== env.ADMIN_PASSWORD) {
+  if (typeof password !== 'string' || !safeEquals(password, env.ADMIN_PASSWORD)) {
     return res.status(401).json({ error: 'Invalid password' });
   }
 
@@ -119,7 +128,7 @@ router.post('/admin/access-requests/:id/approve', requireAuth, async (req: Reque
     }
 
     const permittedUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-    await whitelistService.addUser(request.phone_number, permittedUntil);
+    await whitelistService.addUser(request.phone_number, permittedUntil, request.name ?? undefined);
     await accessRequestService.resolve(id, 'approved');
 
     const untilText = permittedUntil.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
