@@ -7,6 +7,9 @@ import { buildWelcomeMessage } from '../services/message.service.js';
 import { requireAuth, generateAdminToken } from '../middleware/auth.js';
 import { getEnv } from '../config/env.js';
 import { getDatabase } from '../config/database.js';
+import { redis, connectRedis } from '../config/redis.js';
+import { logsService } from '../services/logs.service.js';
+import { LogLevel } from '../utils/logger.js';
 import { isValidNormalizedPhone } from '../utils/validator.js';
 
 const router = Router();
@@ -162,6 +165,92 @@ router.post('/admin/access-requests/:id/deny', requireAuth, async (req: Request,
     );
 
     res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+/**
+ * Read-only aggregate for an external monitoring agent (not the admin
+ * panel). Deliberately a separate, narrower credential from the admin
+ * JWT/password - this only needs visibility into recent problems, not
+ * the ability to manage users or anything else the admin token allows.
+ *
+ * GET /admin/health-report?hours=2
+ * Header: x-monitor-key: <MONITOR_API_KEY>
+ */
+router.get('/admin/health-report', async (req: Request, res: Response) => {
+  const provided = req.headers['x-monitor-key'];
+  if (!env.MONITOR_API_KEY || typeof provided !== 'string' || !safeEquals(provided, env.MONITOR_API_KEY)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const hours = Math.min(Math.max(parseInt(req.query.hours as string) || 2, 1), 24);
+    const pool = getDatabase();
+
+    // Errors from the structured logger. These live on the container's own
+    // filesystem, which is wiped on every redeploy - fine for a short
+    // lookback window like this, not a historical record.
+    const errorLogs = logsService.getLogs({ level: LogLevel.ERROR, hours, limit: 50 });
+
+    // Messages that were processed but never reached the user - the
+    // clearest signal of someone getting "frozen" with no reply.
+    const failedDeliveries = await pool.query(
+      `SELECT phone_number, message_text, intent, created_at FROM message_logs
+       WHERE delivered = false AND created_at > NOW() - ($1 || ' hours')::interval
+       ORDER BY created_at DESC LIMIT 50`,
+      [hours]
+    );
+
+    // Replies that are themselves apology/fallback text - delivery
+    // succeeded, but something upstream (parsing, a dependency) failed.
+    const errorResponses = await pool.query(
+      `SELECT phone_number, message_text, intent, response_text, created_at FROM message_logs
+       WHERE created_at > NOW() - ($1 || ' hours')::interval
+         AND (
+           intent IN ('media_fetch_failed', 'receipt_unreadable', 'audio_fetch_failed', 'audio_transcription_failed')
+           OR response_text ILIKE '%ocorreu um erro%'
+           OR response_text ILIKE '%não consegui entender%'
+           OR response_text ILIKE '%tive um problema%'
+         )
+       ORDER BY created_at DESC LIMIT 50`,
+      [hours]
+    );
+
+    // Reminders that failed to send outright (the worker logs these).
+    const failedReminders = await pool.query(
+      `SELECT phone_number, message_text, error, created_at FROM failed_messages
+       WHERE created_at > NOW() - ($1 || ' hours')::interval
+       ORDER BY created_at DESC LIMIT 50`,
+      [hours]
+    );
+
+    let databaseHealthy = true;
+    try {
+      await pool.query('SELECT 1');
+    } catch {
+      databaseHealthy = false;
+    }
+
+    let redisHealthy = true;
+    try {
+      if (!redis.isOpen) await connectRedis();
+      await redis.ping();
+    } catch {
+      redisHealthy = false;
+    }
+
+    res.json({
+      success: true,
+      windowHours: hours,
+      health: { database: databaseHealthy, redis: redisHealthy },
+      errorLogs: errorLogs.logs,
+      failedDeliveries: failedDeliveries.rows,
+      errorResponses: errorResponses.rows,
+      failedReminders: failedReminders.rows,
+      timestamp: new Date().toISOString(),
+    });
   } catch (error) {
     res.status(500).json({ error: String(error) });
   }

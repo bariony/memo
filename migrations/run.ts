@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 async function runMigrations() {
   const pool = getDatabase();
 
-  const migrations = ['001_initial_schema.sql', '002_add_indexes.sql', '003_analytics_tables.sql', '004_add_user_name.sql', '005_add_response_text.sql', '006_access_requests.sql', '007_access_prompt_state.sql'];
+  const migrations = ['001_initial_schema.sql', '002_add_indexes.sql', '003_analytics_tables.sql', '004_add_user_name.sql', '005_add_response_text.sql', '006_access_requests.sql', '007_access_prompt_state.sql', '008_message_delivery_tracking.sql'];
 
   for (const migration of migrations) {
     const filePath = path.join(__dirname, migration);

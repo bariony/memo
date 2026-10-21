@@ -85,17 +85,33 @@ export class MessageService {
     phone: string,
     messageText: string,
     intent: string | null,
-    responseText?: string
+    responseText?: string,
+    delivered: boolean = true
   ): Promise<void> {
     try {
       const pool = getDatabase();
       await pool.query(
-        'INSERT INTO message_logs (phone_number, message_text, intent, response_text) VALUES ($1, $2, $3, $4)',
-        [phone, messageText, intent, responseText ?? null]
+        'INSERT INTO message_logs (phone_number, message_text, intent, response_text, delivered) VALUES ($1, $2, $3, $4, $5)',
+        [phone, messageText, intent, responseText ?? null, delivered]
       );
     } catch (err) {
       console.error('Failed to log message:', err);
     }
+  }
+
+  /** Sends a reply and logs it in one place, so delivery failures always end up queryable in message_logs.delivered instead of just a console.error nobody aggregates. */
+  private async sendAndLog(
+    phone: string,
+    messageText: string,
+    intent: string,
+    response: string
+  ): Promise<string> {
+    const delivered = await this.evolutionService.sendMessage(phone, response);
+    if (!delivered) {
+      console.error(`WhatsApp delivery failed for ${phone} - message was processed but never reached the user`);
+    }
+    await this.logMessage(phone, messageText, intent, response, delivered);
+    return response;
   }
 
   /**
@@ -204,17 +220,13 @@ export class MessageService {
         await this.evolutionService.sendMessage(getEnv().ADMIN_PHONE_NUMBER, adminMsg);
       }
 
-      await this.evolutionService.sendMessage(phone, msg);
-      await this.logMessage(phone, messageText, 'access_request_reminder', msg);
-      return msg;
+      return this.sendAndLog(phone, messageText, 'access_request_reminder', msg);
     }
 
     // Already said no before - don't keep re-asking or bothering the admin.
     if (user.access_prompt_status === 'declined') {
       const msg = 'Oi! Se quiser solicitar acesso ao Memo é só me avisar por aqui 😊';
-      await this.evolutionService.sendMessage(phone, msg);
-      await this.logMessage(phone, messageText, 'access_prompt_declined_followup', msg);
-      return msg;
+      return this.sendAndLog(phone, messageText, 'access_prompt_declined_followup', msg);
     }
 
     // Already said yes - this message is their answer to "como se chama?".
@@ -229,18 +241,14 @@ export class MessageService {
       }
 
       const msg = `Prazer, ${name}! 🙌 Já encaminhei seu pedido de acesso. Assim que for liberado, te aviso por aqui e já podemos começar!`;
-      await this.evolutionService.sendMessage(phone, msg);
-      await this.logMessage(phone, messageText, 'access_request_created', msg);
-      return msg;
+      return this.sendAndLog(phone, messageText, 'access_request_created', msg);
     }
 
     // Gate not sent yet - first message ever from this number.
     if (!user.access_prompt_sent_at) {
       await pool.query('UPDATE users SET access_prompt_sent_at = NOW() WHERE phone_number = $1', [phone]);
       const msg = 'Oi! 👋 Eu sou o Memo, seu assistente pessoal de bolso — ajudo a organizar gastos, lembretes e tirar dúvidas do dia a dia pelo WhatsApp.\n\nVi que você ainda não tem acesso por aqui. Quer solicitar? Responda *sim* ou *não* 😊';
-      await this.evolutionService.sendMessage(phone, msg);
-      await this.logMessage(phone, messageText, 'access_prompt_sent', msg);
-      return msg;
+      return this.sendAndLog(phone, messageText, 'access_prompt_sent', msg);
     }
 
     // Gate already sent, no answer recorded yet - this message is that answer.
@@ -249,24 +257,18 @@ export class MessageService {
     if (answer === 'no') {
       await pool.query("UPDATE users SET access_prompt_status = 'declined' WHERE phone_number = $1", [phone]);
       const msg = 'Sem problemas! Se mudar de ideia, é só me chamar por aqui 😊';
-      await this.evolutionService.sendMessage(phone, msg);
-      await this.logMessage(phone, messageText, 'access_prompt_declined', msg);
-      return msg;
+      return this.sendAndLog(phone, messageText, 'access_prompt_declined', msg);
     }
 
     if (answer === 'unclear') {
       const msg = 'Não entendi — quer solicitar acesso ao Memo? Responda *sim* ou *não* 😊';
-      await this.evolutionService.sendMessage(phone, msg);
-      await this.logMessage(phone, messageText, 'access_prompt_unclear', msg);
-      return msg;
+      return this.sendAndLog(phone, messageText, 'access_prompt_unclear', msg);
     }
 
     // 'yes'
     await pool.query("UPDATE users SET access_prompt_status = 'confirmed' WHERE phone_number = $1", [phone]);
     const msg = 'Boa! Como você se chama? 😊';
-    await this.evolutionService.sendMessage(phone, msg);
-    await this.logMessage(phone, messageText, 'access_prompt_confirmed', msg);
-    return msg;
+    return this.sendAndLog(phone, messageText, 'access_prompt_confirmed', msg);
   }
 
   /**
@@ -291,7 +293,7 @@ export class MessageService {
         ? 'Oi! 👋 Eu sou o Memo, seu assistente pessoal.\n\nVi que seu acesso expirou. Para continuar comigo e não perder seu histórico de gastos e lembretes, fala com o Igor para renovar: 📞 11 98668-3737\n\nAssim que renovar, volto a te ajudar! 😊'
         : 'Oi! 👋 Eu sou o Memo, seu assistente pessoal.\n\nSeu acesso foi desativado por aqui. Se quiser voltar a usar, fala com o Igor: 📞 11 98668-3737 😊';
 
-      await this.evolutionService.sendMessage(phone, msg);
+      await this.sendAndLog(phone, messageText, `access_${access.reason}`, msg);
       return { ok: false, response: msg };
     }
 
@@ -315,8 +317,7 @@ export class MessageService {
         });
 
         const msg = `${greeting.trim()}\n\nAntes de começar, como posso te chamar? 😊`;
-        await this.evolutionService.sendMessage(phone, msg);
-        await this.logMessage(phone, messageText, 'name_request', msg);
+        await this.sendAndLog(phone, messageText, 'name_request', msg);
         return { ok: false, response: msg };
       }
 
@@ -324,8 +325,7 @@ export class MessageService {
       await pool.query('UPDATE users SET name = $1 WHERE phone_number = $2', [name, phone]);
 
       const msg = `Prazer em te conhecer, ${name}! 🤝\n\nA partir de agora sou seu amigo pessoal de bolso — pode contar comigo pra registrar gastos, lembrar de compromissos, tirar dúvidas e te ajudar no dia a dia. 💪\n\nManda aí o que precisar!`;
-      await this.evolutionService.sendMessage(phone, msg);
-      await this.logMessage(phone, messageText, 'name_capture', msg);
+      await this.sendAndLog(phone, messageText, 'name_capture', msg);
       return { ok: false, response: msg };
     }
 
@@ -357,18 +357,14 @@ export class MessageService {
       const media = await this.evolutionService.getMediaBase64(messageKey);
       if (!media) {
         const msg = 'Recebi seu arquivo, mas não consegui abrir agora. Pode me contar o valor e do que se trata em texto? 😊';
-        await this.evolutionService.sendMessage(phone, msg);
-        await this.logMessage(phone, placeholderText, 'media_fetch_failed', msg);
-        return msg;
+        return this.sendAndLog(phone, placeholderText, 'media_fetch_failed', msg);
       }
 
       const parsed = await this.claudeService.parseReceiptMedia(media.base64, media.mimetype, phone, caption);
 
       if (parsed.expenses.length === 0) {
         const msg = 'Recebi o comprovante, mas não consegui identificar nenhum valor nele com confiança. Pode me passar o valor direto? 😊';
-        await this.evolutionService.sendMessage(phone, msg);
-        await this.logMessage(phone, placeholderText, 'receipt_unreadable', msg);
-        return msg;
+        return this.sendAndLog(phone, placeholderText, 'receipt_unreadable', msg);
       }
 
       for (const expense of parsed.expenses) {
@@ -382,9 +378,7 @@ export class MessageService {
         ? withFollowUp(`✓ Anotei: R$${parsed.expenses[0].amount.toFixed(2)} em ${parsed.expenses[0].description}${merchantText}.`)
         : withFollowUp(`✓ Registrei ${parsed.expenses.length} despesas do seu comprovante${merchantText}, totalizando R$${total.toFixed(2)}:\n${parsed.expenses.map((e) => `• R$${e.amount.toFixed(2)} - ${e.description}`).join('\n')}`);
 
-      await this.evolutionService.sendMessage(phone, response);
-      await this.logMessage(phone, placeholderText, 'expense_log_media', response);
-      return response;
+      return this.sendAndLog(phone, placeholderText, 'expense_log_media', response);
     } catch (error) {
       console.error('Media processing error:', error);
       const errorMsg = 'Desculpe, tive um problema processando seu arquivo. Pode tentar de novo ou me contar em texto? 😊';
@@ -416,15 +410,13 @@ export class MessageService {
       const media = await this.evolutionService.getMediaBase64(messageKey);
       if (!media) {
         const msg = 'Recebi seu áudio, mas não consegui abrir agora. Pode escrever? 😊';
-        await this.evolutionService.sendMessage(phone, msg);
-        return msg;
+        return this.sendAndLog(phone, '[áudio recebido]', 'audio_fetch_failed', msg);
       }
 
       const transcript = await transcriptionService.transcribeAudio(media.base64, media.mimetype);
       if (!transcript) {
         const msg = 'Recebi seu áudio, mas ainda não consigo entender áudio por aqui. Pode me escrever a mesma coisa em texto? 😊';
-        await this.evolutionService.sendMessage(phone, msg);
-        return msg;
+        return this.sendAndLog(phone, '[áudio recebido]', 'audio_transcription_failed', msg);
       }
 
       return this.processMessage(phone, transcript);
@@ -462,9 +454,7 @@ export class MessageService {
       const restrictionType = detectRestrictionType(messageText);
       if (restrictionType) {
         const response = getSmartResponse(restrictionType, phone);
-        await this.evolutionService.sendMessage(phone, response);
-        await this.logMessage(phone, messageText, `restricted:${restrictionType}`, response);
-        return response;
+        return this.sendAndLog(phone, messageText, `restricted:${restrictionType}`, response);
       }
 
       // 5. Build the full assistant personality/system prompt for this user
@@ -520,13 +510,7 @@ export class MessageService {
         response = await this.claudeService.answerGeneralQuestion(messageText, phone, systemPrompt, history);
       }
 
-      // Send response
-      const delivered = await this.evolutionService.sendMessage(phone, response);
-      if (!delivered) {
-        console.error(`WhatsApp delivery failed for ${phone} - message was processed but never reached the user`);
-      }
-      await this.logMessage(phone, messageText, intent, response);
-      return response;
+      return this.sendAndLog(phone, messageText, intent, response);
     } catch (error) {
       console.error('Message processing error:', error);
       const errorMsg = 'Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente.';

@@ -7,6 +7,7 @@ export interface Config {
   ADMIN_PASSWORD: string;
   ADMIN_PHONE_NUMBER: string;
   JWT_SECRET: string;
+  MONITOR_API_KEY: string;
   NODE_ENV: 'development' | 'production' | 'test';
   PORT: number;
 }
@@ -44,6 +45,12 @@ export function getEnv(): Config {
     // so existing deployments keep working without a Railway env change,
     // but a dedicated JWT_SECRET should be set for real security.
     JWT_SECRET: process.env.JWT_SECRET || process.env.ADMIN_PASSWORD!,
+    // Separate from ADMIN_PASSWORD/JWT_SECRET on purpose: this is handed to
+    // an external monitoring agent that only needs read-only visibility
+    // into recent errors/delivery failures, not full admin control. No
+    // weak fallback here - if unset, the health-report route refuses
+    // every request instead of silently working with a guessable default.
+    MONITOR_API_KEY: process.env.MONITOR_API_KEY || '',
     NODE_ENV: (process.env.NODE_ENV || 'development') as any,
     PORT: parseInt(process.env.PORT || '3000', 10)
   };
