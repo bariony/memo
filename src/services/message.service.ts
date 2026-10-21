@@ -3,6 +3,7 @@ import { WhitelistService } from './whitelist.service.js';
 import { ExpenseService } from './expense.service.js';
 import { ReminderService } from './reminder.service.js';
 import { accessRequestService } from './accessRequest.service.js';
+import { transcriptionService } from './transcription.service.js';
 import { evolution } from './evolution.service.js';
 import { getDatabase } from '../config/database.js';
 import { getEnv } from '../config/env.js';
@@ -387,6 +388,49 @@ export class MessageService {
     } catch (error) {
       console.error('Media processing error:', error);
       const errorMsg = 'Desculpe, tive um problema processando seu arquivo. Pode tentar de novo ou me contar em texto? 😊';
+      try {
+        await this.evolutionService.sendMessage(phone, errorMsg);
+      } catch (e) {
+        console.error('Failed to send error message:', e);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * A voice note. Transcribes it, then runs the transcript through the
+   * exact same pipeline as a typed message - expense logging, reminders,
+   * questions, even admin "aprovar/negar" commands - so voice gets every
+   * capability text already has, not a separate cut-down path.
+   */
+  async processAudioMessage(phone: string, messageKey: unknown): Promise<string> {
+    try {
+      // Unauthorized contacts get the normal gate/reminder flow without
+      // spending money transcribing their audio first - none of those
+      // canned responses depend on what was actually said.
+      if (normalizePhone(phone) !== normalizePhone(getEnv().ADMIN_PHONE_NUMBER)) {
+        const resolved = await this.resolveAccess(phone, '[áudio recebido]');
+        if (resolved.ok === false) return resolved.response;
+      }
+
+      const media = await this.evolutionService.getMediaBase64(messageKey);
+      if (!media) {
+        const msg = 'Recebi seu áudio, mas não consegui abrir agora. Pode escrever? 😊';
+        await this.evolutionService.sendMessage(phone, msg);
+        return msg;
+      }
+
+      const transcript = await transcriptionService.transcribeAudio(media.base64, media.mimetype);
+      if (!transcript) {
+        const msg = 'Recebi seu áudio, mas ainda não consigo entender áudio por aqui. Pode me escrever a mesma coisa em texto? 😊';
+        await this.evolutionService.sendMessage(phone, msg);
+        return msg;
+      }
+
+      return this.processMessage(phone, transcript);
+    } catch (error) {
+      console.error('Audio processing error:', error);
+      const errorMsg = 'Desculpe, tive um problema processando seu áudio. Pode tentar de novo ou escrever? 😊';
       try {
         await this.evolutionService.sendMessage(phone, errorMsg);
       } catch (e) {

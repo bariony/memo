@@ -53,6 +53,11 @@ function extractMediaInfo(message: any): { type: 'image' | 'document' } | null {
   return null;
 }
 
+/** Voice notes (and regular audio files) sent via WhatsApp. */
+function isAudioMessage(message: any): boolean {
+  return Boolean(message?.audioMessage);
+}
+
 router.post('/webhook', (req: Request, res: Response) => {
   // Acknowledge immediately so Evolution API never retries/times out,
   // regardless of whether we can parse this particular event.
@@ -80,6 +85,13 @@ router.post('/webhook', (req: Request, res: Response) => {
     const mediaInfo = extractMediaInfo(data.message);
 
     if (!phoneNumber) {
+      return;
+    }
+
+    if (isAudioMessage(data.message)) {
+      messageService.processAudioMessage(phoneNumber, data.key).catch((err) => {
+        console.error('Async audio processing failed:', err);
+      });
       return;
     }
 
