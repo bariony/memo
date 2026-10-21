@@ -4,6 +4,30 @@ import { Expense, ClaudeParseExpense } from '../types/index.js';
 
 const env = getEnv();
 
+/**
+ * Parse JSON out of an LLM response that may wrap it in markdown code
+ * fences or add explanatory text before/after. Tries a direct parse
+ * first, then falls back to extracting the first {...} block.
+ */
+function extractJson(text: string): any | null {
+  try {
+    return JSON.parse(text);
+  } catch {
+    // fall through
+  }
+
+  const match = text.match(/\{[\s\S]*\}/);
+  if (match) {
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
 export class ClaudeService {
   private apiKey = env.CLAUDE_API_KEY;
   private apiUrl = 'https://api.anthropic.com/v1/messages';
@@ -24,20 +48,20 @@ Mensagem: "${message}"`
 
   async parseExpense(message: string): Promise<ClaudeParseExpense> {
     const response = await this.callClaude(
-      `Extraia o valor (amount) e descrição (description) dessa mensagem de gasto. Responda em JSON: {"amount": X, "description": "..."}
+      `Extraia o valor (amount) e descrição (description) dessa mensagem de gasto. Responda APENAS com o JSON, sem nenhum texto antes ou depois: {"amount": X, "description": "..."}
 
 Mensagem: "${message}"`
     );
 
-    try {
-      const parsed = JSON.parse(response);
-      return {
-        amount: parseFloat(parsed.amount),
-        description: parsed.description
-      };
-    } catch (err) {
+    const parsed = extractJson(response);
+    if (!parsed || parsed.amount === undefined || !parsed.description) {
       throw new Error(`Failed to parse expense: ${response}`);
     }
+
+    return {
+      amount: parseFloat(parsed.amount),
+      description: parsed.description
+    };
   }
 
   async formatExpenseQuery(expenses: Expense[], question: string): Promise<string> {
