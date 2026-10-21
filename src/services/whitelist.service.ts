@@ -92,6 +92,20 @@ export class WhitelistService {
     await redis.del(`whitelist:${phone}`);
   }
 
+  async deleteUser(phoneExact: string): Promise<void> {
+    // Deletes by the EXACT stored value (no normalization) so this can
+    // also remove legacy rows that predate normalizePhone() and would
+    // never match a normalized lookup.
+    const pool = getDatabase();
+    await pool.query('DELETE FROM whitelist WHERE phone_number = $1', [phoneExact]);
+    await pool.query('DELETE FROM users WHERE phone_number = $1', [phoneExact]);
+
+    // Invalidate cache under both the raw and normalized key, in case
+    // either was ever cached.
+    await redis.del(`whitelist:${phoneExact}`);
+    await redis.del(`whitelist:${normalizePhone(phoneExact)}`);
+  }
+
   async listUsers(): Promise<WhitelistEntry[]> {
     const pool = getDatabase();
     const result = await pool.query(

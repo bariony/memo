@@ -55,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function login() {
   const password = document.getElementById('password').value;
   if (!password) {
-    alert('Digite a senha');
+    showToast('Digite a senha', '⚠️');
     return;
   }
 
@@ -67,7 +67,7 @@ async function login() {
     });
 
     if (!res.ok) {
-      alert('Senha inválida');
+      showToast('Senha inválida', '❌');
       return;
     }
 
@@ -78,13 +78,14 @@ async function login() {
     showDashboard();
     loadDashboard();
   } catch (err) {
-    alert('Erro ao fazer login');
+    showToast('Erro ao fazer login', '❌');
     console.error(err);
   }
 }
 
-function logout() {
-  if (confirm('Tem certeza que deseja sair?')) {
+async function logout() {
+  const ok = await confirmModal('Tem certeza que deseja sair?', 'Sair');
+  if (ok) {
     localStorage.removeItem('memo_token');
     token = null;
     allUsers = [];
@@ -173,6 +174,7 @@ function renderWhitelist(users) {
         <div class="table-actions">
           ${user.status === 'active' ? `<button class="btn-action revoke" onclick="revokeUser('${user.phone_number}')">Revogar</button>` : ''}
           <button class="btn-action edit" onclick="openEditModal('${user.phone_number}')">Editar</button>
+          <button class="btn-action revoke" onclick="deleteUser('${user.phone_number}')">Excluir</button>
         </div>
       </td>
     `;
@@ -221,7 +223,7 @@ async function confirmEdit() {
   if (!newDate || !editingPhone) return;
 
   try {
-    const res = await fetch(`/admin/whitelist/${editingPhone}`, {
+    const res = await fetch(`/admin/whitelist/${encodeURIComponent(editingPhone)}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -234,9 +236,9 @@ async function confirmEdit() {
 
     closeEditModal();
     loadDashboard();
-    alert('Data atualizada com sucesso');
+    showToast('Data atualizada com sucesso');
   } catch (err) {
-    alert('Erro ao atualizar data');
+    showToast('Erro ao atualizar data', '❌');
     console.error(err);
   }
 }
@@ -250,7 +252,7 @@ async function addUser() {
   const expiry = document.getElementById('add-expiry').value;
 
   if (!phone || !expiry) {
-    alert('Preencha todos os campos');
+    showToast('Preencha todos os campos', '⚠️');
     return;
   }
 
@@ -273,18 +275,19 @@ async function addUser() {
     document.getElementById('add-expiry').value = '';
     closeAddModal();
     loadDashboard();
-    showToast('✅ Usuário adicionado com sucesso!');
+    showToast('Usuário adicionado com sucesso!');
   } catch (err) {
-    showToast('❌ Erro ao adicionar usuário', 'error');
+    showToast('Erro ao adicionar usuário', '❌');
     console.error(err);
   }
 }
 
 async function revokeUser(phone) {
-  if (!confirm('Revogar acesso deste usuário?')) return;
+  const ok = await confirmModal(`Revogar acesso de ${phone}?`, 'Revogar acesso');
+  if (!ok) return;
 
   try {
-    const res = await fetch(`/admin/whitelist/${phone}/revoke`, {
+    const res = await fetch(`/admin/whitelist/${encodeURIComponent(phone)}/revoke`, {
       method: 'PATCH',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -292,9 +295,32 @@ async function revokeUser(phone) {
     if (!res.ok) throw new Error('Revoke failed');
 
     loadDashboard();
-    alert('Acesso revogado com sucesso');
+    showToast('Acesso revogado com sucesso');
   } catch (err) {
-    alert('Erro ao revogar acesso');
+    showToast('Erro ao revogar acesso', '❌');
+    console.error(err);
+  }
+}
+
+async function deleteUser(phone) {
+  const ok = await confirmModal(
+    `Excluir ${phone} permanentemente? Essa ação não pode ser desfeita.`,
+    'Excluir usuário'
+  );
+  if (!ok) return;
+
+  try {
+    const res = await fetch(`/admin/whitelist/${encodeURIComponent(phone)}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!res.ok) throw new Error('Delete failed');
+
+    loadDashboard();
+    showToast('Usuário excluído com sucesso');
+  } catch (err) {
+    showToast('Erro ao excluir usuário', '❌');
     console.error(err);
   }
 }
@@ -331,6 +357,36 @@ function scrollToUsers() {
 // ============================================================================
 // TOAST & UI HELPERS
 // ============================================================================
+
+// ============================================================================
+// THEMED CONFIRM MODAL (replaces native confirm()/alert())
+// ============================================================================
+
+function confirmModal(message, title = 'Confirmar ação') {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('confirm-modal');
+    const titleEl = document.getElementById('confirm-title');
+    const messageEl = document.getElementById('confirm-message');
+    const okBtn = document.getElementById('confirm-ok-btn');
+    const cancelBtn = document.getElementById('confirm-cancel-btn');
+
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    modal.classList.add('open');
+
+    const cleanup = (result) => {
+      modal.classList.remove('open');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      resolve(result);
+    };
+    const onOk = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+  });
+}
 
 function showToast(msg, icon = '✅') {
   const toast = document.getElementById('toast');

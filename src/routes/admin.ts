@@ -57,6 +57,17 @@ router.patch('/admin/whitelist/:phone/revoke', requireAuth, async (req: Request,
   }
 });
 
+// Delete user (exact stored match - also cleans up legacy/malformed entries)
+router.delete('/admin/whitelist/:phone', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { phone } = req.params;
+    await whitelistService.deleteUser(phone);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
 // Update expiration
 router.patch('/admin/whitelist/:phone', requireAuth, async (req: Request, res: Response) => {
   try {
