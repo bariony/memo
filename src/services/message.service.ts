@@ -268,6 +268,134 @@ export class MessageService {
     return msg;
   }
 
+  /**
+   * Whitelist check, unauthorized-contact handling, and name-collection -
+   * shared by both the text flow and the media (receipt photo/PDF) flow so
+   * they don't have two diverging copies of access control.
+   */
+  private async resolveAccess(
+    phone: string,
+    messageText: string
+  ): Promise<
+    | { ok: true; userName: string; permittedUntil: string }
+    | { ok: false; response: string }
+  > {
+    const access = await this.whitelistService.validateAccess(phone);
+    if (!access.authorized) {
+      if (access.reason === 'not_found') {
+        return { ok: false, response: await this.handleNewContactRequest(phone, messageText) };
+      }
+
+      const msg = access.reason === 'expired'
+        ? 'Oi! 👋 Eu sou o Memo, seu assistente pessoal.\n\nVi que seu acesso expirou. Para continuar comigo e não perder seu histórico de gastos e lembretes, fala com o Igor para renovar: 📞 11 98668-3737\n\nAssim que renovar, volto a te ajudar! 😊'
+        : 'Oi! 👋 Eu sou o Memo, seu assistente pessoal.\n\nSeu acesso foi desativado por aqui. Se quiser voltar a usar, fala com o Igor: 📞 11 98668-3737 😊';
+
+      await this.evolutionService.sendMessage(phone, msg);
+      return { ok: false, response: msg };
+    }
+
+    const pool = getDatabase();
+    await pool.query('INSERT INTO users (phone_number) VALUES ($1) ON CONFLICT DO NOTHING', [phone]);
+
+    const userResult = await pool.query(
+      'SELECT name, name_requested_at FROM users WHERE phone_number = $1',
+      [phone]
+    );
+    const user = userResult.rows[0] as { name: string | null; name_requested_at: Date | null };
+
+    if (!user.name) {
+      if (!user.name_requested_at) {
+        await pool.query('UPDATE users SET name_requested_at = NOW() WHERE phone_number = $1', [phone]);
+
+        const greeting = assistantService.getGreetingMessage({
+          phone_number: phone,
+          permitted_until: access.permitted_until!,
+          status: 'active',
+        });
+
+        const msg = `${greeting.trim()}\n\nAntes de começar, como posso te chamar? 😊`;
+        await this.evolutionService.sendMessage(phone, msg);
+        await this.logMessage(phone, messageText, 'name_request', msg);
+        return { ok: false, response: msg };
+      }
+
+      const name = extractName(messageText);
+      await pool.query('UPDATE users SET name = $1 WHERE phone_number = $2', [name, phone]);
+
+      const msg = `Prazer em te conhecer, ${name}! 🤝\n\nA partir de agora sou seu amigo pessoal de bolso — pode contar comigo pra registrar gastos, lembrar de compromissos, tirar dúvidas e te ajudar no dia a dia. 💪\n\nManda aí o que precisar!`;
+      await this.evolutionService.sendMessage(phone, msg);
+      await this.logMessage(phone, messageText, 'name_capture', msg);
+      return { ok: false, response: msg };
+    }
+
+    return { ok: true, userName: user.name, permittedUntil: access.permitted_until! };
+  }
+
+  /**
+   * A photographed/scanned receipt, grocery slip, or bank statement sent as
+   * an image or PDF, with or without a caption. Runs the exact same access
+   * control as a normal text message, then hands the media to Claude's
+   * vision instead of treating it as unreadable.
+   */
+  async processMediaMessage(
+    phone: string,
+    messageKey: unknown,
+    mediaInfo: { type: 'image' | 'document' },
+    caption?: string
+  ): Promise<string> {
+    try {
+      if (normalizePhone(phone) === normalizePhone(getEnv().ADMIN_PHONE_NUMBER)) {
+        const adminReply = await this.handleAdminCommand(caption || '');
+        if (adminReply !== null) return adminReply;
+      }
+
+      const placeholderText = caption || (mediaInfo.type === 'document' ? '[PDF recebido]' : '[imagem recebida]');
+      const resolved = await this.resolveAccess(phone, placeholderText);
+      if (resolved.ok === false) return resolved.response;
+
+      const media = await this.evolutionService.getMediaBase64(messageKey);
+      if (!media) {
+        const msg = 'Recebi seu arquivo, mas não consegui abrir agora. Pode me contar o valor e do que se trata em texto? 😊';
+        await this.evolutionService.sendMessage(phone, msg);
+        await this.logMessage(phone, placeholderText, 'media_fetch_failed', msg);
+        return msg;
+      }
+
+      const parsed = await this.claudeService.parseReceiptMedia(media.base64, media.mimetype, phone, caption);
+
+      if (parsed.expenses.length === 0) {
+        const msg = 'Recebi o comprovante, mas não consegui identificar nenhum valor nele com confiança. Pode me passar o valor direto? 😊';
+        await this.evolutionService.sendMessage(phone, msg);
+        await this.logMessage(phone, placeholderText, 'receipt_unreadable', msg);
+        return msg;
+      }
+
+      for (const expense of parsed.expenses) {
+        await this.expenseService.logExpense(phone, expense.amount, expense.description);
+      }
+
+      const total = parsed.expenses.reduce((sum, e) => sum + e.amount, 0);
+      const merchantText = parsed.merchant ? ` do ${parsed.merchant}` : '';
+
+      const response = parsed.expenses.length === 1
+        ? withFollowUp(`✓ Anotei: R$${parsed.expenses[0].amount.toFixed(2)} em ${parsed.expenses[0].description}${merchantText}.`)
+        : withFollowUp(`✓ Registrei ${parsed.expenses.length} despesas do seu comprovante${merchantText}, totalizando R$${total.toFixed(2)}:\n${parsed.expenses.map((e) => `• R$${e.amount.toFixed(2)} - ${e.description}`).join('\n')}`);
+
+      await this.evolutionService.sendMessage(phone, response);
+      await this.logMessage(phone, placeholderText, 'expense_log_media', response);
+      return response;
+    } catch (error) {
+      console.error('Media processing error:', error);
+      const errorMsg = 'Desculpe, tive um problema processando seu arquivo. Pode tentar de novo ou me contar em texto? 😊';
+      try {
+        await this.evolutionService.sendMessage(phone, errorMsg);
+      } catch (e) {
+        console.error('Failed to send error message:', e);
+      }
+      throw error;
+    }
+  }
+
   async processMessage(phone: string, messageText: string): Promise<string> {
     try {
       // 0. Admin WhatsApp commands ("aprovar <numero>" / "negar <numero>")
@@ -278,64 +406,11 @@ export class MessageService {
         if (adminReply !== null) return adminReply;
       }
 
-      // 1. Validate whitelist
-      const access = await this.whitelistService.validateAccess(phone);
-      if (!access.authorized) {
-        if (access.reason === 'not_found') {
-          return this.handleNewContactRequest(phone, messageText);
-        }
+      // 1-3. Whitelist, unauthorized-contact handling, name collection
+      const resolved = await this.resolveAccess(phone, messageText);
+      if (resolved.ok === false) return resolved.response;
 
-        const msg = access.reason === 'expired'
-          ? 'Oi! 👋 Eu sou o Memo, seu assistente pessoal.\n\nVi que seu acesso expirou. Para continuar comigo e não perder seu histórico de gastos e lembretes, fala com o Igor para renovar: 📞 11 98668-3737\n\nAssim que renovar, volto a te ajudar! 😊'
-          : 'Oi! 👋 Eu sou o Memo, seu assistente pessoal.\n\nSeu acesso foi desativado por aqui. Se quiser voltar a usar, fala com o Igor: 📞 11 98668-3737 😊';
-
-        await this.evolutionService.sendMessage(phone, msg);
-        return msg;
-      }
-
-      // 2. Ensure user exists, fetch current name state
-      const pool = getDatabase();
-      await pool.query(
-        'INSERT INTO users (phone_number) VALUES ($1) ON CONFLICT DO NOTHING',
-        [phone]
-      );
-
-      const userResult = await pool.query(
-        'SELECT name, name_requested_at FROM users WHERE phone_number = $1',
-        [phone]
-      );
-      const user = userResult.rows[0] as { name: string | null; name_requested_at: Date | null };
-
-      // 3. Name collection: ask once, then capture the next reply as the name
-      if (!user.name) {
-        if (!user.name_requested_at) {
-          await pool.query(
-            'UPDATE users SET name_requested_at = NOW() WHERE phone_number = $1',
-            [phone]
-          );
-
-          const greeting = assistantService.getGreetingMessage({
-            phone_number: phone,
-            permitted_until: access.permitted_until!,
-            status: 'active',
-          });
-
-          const msg = `${greeting.trim()}\n\nAntes de começar, como posso te chamar? 😊`;
-          await this.evolutionService.sendMessage(phone, msg);
-          await this.logMessage(phone, messageText, 'name_request', msg);
-          return msg;
-        }
-
-        const name = extractName(messageText);
-        await pool.query('UPDATE users SET name = $1 WHERE phone_number = $2', [name, phone]);
-
-        const msg = `Prazer em te conhecer, ${name}! 🤝\n\nA partir de agora sou seu amigo pessoal de bolso — pode contar comigo pra registrar gastos, lembrar de compromissos, tirar dúvidas e te ajudar no dia a dia. 💪\n\nManda aí o que precisar!`;
-        await this.evolutionService.sendMessage(phone, msg);
-        await this.logMessage(phone, messageText, 'name_capture', msg);
-        return msg;
-      }
-
-      const userName = user.name;
+      const userName = resolved.userName;
 
       // 4. Smart contour: catch out-of-scope requests before hitting Claude,
       // so the user gets a helpful "here's what I CAN do" instead of a flat
@@ -351,7 +426,7 @@ export class MessageService {
       // 5. Build the full assistant personality/system prompt for this user
       const systemPrompt = assistantService.getSystemPrompt({
         phone_number: phone,
-        permitted_until: access.permitted_until!,
+        permitted_until: resolved.permittedUntil,
         status: 'active',
         name: userName,
       });

@@ -33,6 +33,26 @@ function extractMessageText(message: any): string | null {
   );
 }
 
+/**
+ * Detect a receipt/invoice-shaped attachment (photo or PDF). Previously
+ * only `imageMessage.caption` was ever read - the image itself was never
+ * looked at, so a photo sent with no caption (the normal way people send a
+ * receipt) was silently dropped with zero reply.
+ */
+function extractMediaInfo(message: any): { type: 'image' | 'document' } | null {
+  if (!message) return null;
+
+  if (message.imageMessage) {
+    return { type: 'image' };
+  }
+
+  if (message.documentMessage?.mimetype === 'application/pdf') {
+    return { type: 'document' };
+  }
+
+  return null;
+}
+
 router.post('/webhook', (req: Request, res: Response) => {
   // Acknowledge immediately so Evolution API never retries/times out,
   // regardless of whether we can parse this particular event.
@@ -57,8 +77,22 @@ router.post('/webhook', (req: Request, res: Response) => {
 
     const phoneNumber = extractPhoneNumber(data.key.remoteJid);
     const messageText = extractMessageText(data.message);
+    const mediaInfo = extractMediaInfo(data.message);
 
-    if (!phoneNumber || !messageText) {
+    if (!phoneNumber) {
+      return;
+    }
+
+    if (mediaInfo) {
+      messageService
+        .processMediaMessage(phoneNumber, data.key, mediaInfo, messageText || undefined)
+        .catch((err) => {
+          console.error('Async media processing failed:', err);
+        });
+      return;
+    }
+
+    if (!messageText) {
       return;
     }
 

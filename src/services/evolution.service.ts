@@ -144,7 +144,66 @@ export async function sendMediaMessage(
   }
 }
 
+export interface MediaContent {
+  base64: string;
+  mimetype: string;
+}
+
+/**
+ * Fetch the decoded (base64) content of an incoming media message - photo
+ * of a receipt, PDF invoice, etc. Evolution API decrypts the WhatsApp media
+ * server-side and returns it given the message's own key, via its
+ * `getBase64FromMediaMessage` endpoint. Response field names have drifted
+ * across Evolution API versions, so this reads several possible shapes
+ * defensively rather than assuming one.
+ */
+export async function getMediaBase64(messageKey: unknown): Promise<MediaContent | null> {
+  try {
+    const evolutionUrl = (process.env.EVOLUTION_API_URL || '').trim();
+
+    if (env.NODE_ENV === 'development' || !evolutionUrl) {
+      logger.info('[MOCK] Would fetch media base64', 'EvolutionService');
+      return null;
+    }
+
+    const response = await fetch(
+      `${evolutionUrl}/chat/getBase64FromMediaMessage/${env.EVOLUTION_INSTANCE}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': env.EVOLUTION_API_KEY,
+        },
+        body: JSON.stringify({ message: { key: messageKey }, convertToMp4: false }),
+        signal: AbortSignal.timeout(20000),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Evolution API media fetch error: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+
+    const data: any = await response.json();
+    const base64 = data.base64 ?? data.data?.base64 ?? data.media?.base64;
+    const mimetype = data.mimetype ?? data.mediaType ?? data.data?.mimetype ?? 'application/octet-stream';
+
+    if (!base64) {
+      logger.warn('Media fetch succeeded but response had no base64 field', 'EvolutionService', {
+        responseKeys: Object.keys(data || {}),
+      });
+      return null;
+    }
+
+    return { base64, mimetype };
+  } catch (err) {
+    logger.error('Failed to fetch media base64', err, 'EvolutionService');
+    return null;
+  }
+}
+
 export const evolution = {
   sendMessage,
   sendMediaMessage,
+  getMediaBase64,
 };

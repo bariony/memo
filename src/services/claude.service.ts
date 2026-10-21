@@ -197,6 +197,94 @@ Gere uma confirmação curta (2-3 frases) e calorosa em português confirmando o
     return this.callClaude(message, systemPrompt, phone, 'answerGeneralQuestion', history);
   }
 
+  /**
+   * Reads a photographed/scanned receipt, grocery-store slip, or bank
+   * statement/invoice via Claude's vision, and extracts every expense line
+   * it can find - not just a single amount, since a supermarket receipt or
+   * a card statement can legitimately have many.
+   */
+  async parseReceiptMedia(
+    base64: string,
+    mimeType: string,
+    phone: string,
+    caption?: string
+  ): Promise<{ expenses: { amount: number; description: string }[]; merchant?: string }> {
+    const isPdf = mimeType === 'application/pdf';
+    const contentBlock = isPdf
+      ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
+      : { type: 'image', source: { type: 'base64', media_type: mimeType || 'image/jpeg', data: base64 } };
+
+    const instruction = `Isso é um comprovante de compra, recibo, nota fiscal ou fatura/extrato bancário.${caption ? ` O usuário mandou junto esta legenda: "${caption}".` : ''} Extraia TODAS as despesas que conseguir identificar.
+
+Regras:
+- Se for um recibo simples com um valor só, retorne 1 item.
+- Se for uma nota fiscal de mercado com vários produtos, agrupe por categoria (ex: "Mercado - hortifruti", "Mercado - limpeza e higiene") em vez de um item por produto - a menos que sejam poucos produtos (até 5), aí pode listar cada um.
+- Se for fatura de cartão ou extrato bancário com várias transações, retorne uma linha por transação relevante (ignore taxas administrativas, juros e saldo anterior).
+- Use o valor de cada item/transação exatamente como aparece no documento.
+- Se não conseguir ler nada com confiança, retorne uma lista vazia - não invente valores.
+
+Responda APENAS com JSON, sem texto antes ou depois:
+{"merchant": "nome do estabelecimento ou banco se identificável, senão null", "expenses": [{"amount": X, "description": "..."}]}`;
+
+    const response = await this.callClaudeMultimodal(contentBlock, instruction, phone, 'parseReceiptMedia');
+    const parsed = extractJson(response);
+
+    if (!parsed || !Array.isArray(parsed.expenses)) {
+      return { expenses: [] };
+    }
+
+    return {
+      merchant: parsed.merchant || undefined,
+      expenses: parsed.expenses
+        .filter((e: any) => e && e.amount !== undefined && e.description)
+        .map((e: any) => ({ amount: parseFloat(e.amount), description: String(e.description) }))
+    };
+  }
+
+  private async callClaudeMultimodal(
+    contentBlock: Record<string, unknown>,
+    instruction: string,
+    phone: string,
+    context: string
+  ): Promise<string> {
+    const response = await retryWithBackoff(
+      () =>
+        axios.post(
+          this.apiUrl,
+          {
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 1024,
+            messages: [
+              {
+                role: 'user',
+                content: [contentBlock, { type: 'text', text: instruction }]
+              }
+            ]
+          },
+          {
+            headers: {
+              'anthropic-version': '2023-06-01',
+              'x-api-key': this.apiKey,
+              'content-type': 'application/json'
+            },
+            timeout: 30000
+          }
+        ),
+      2,
+      500
+    );
+
+    const usage = response.data.usage;
+    if (usage) {
+      const tokensConsumed = (usage.input_tokens || 0) + (usage.output_tokens || 0);
+      this.logTokenUsage(phone, tokensConsumed, context).catch((err) =>
+        console.error('Failed to log token usage:', err)
+      );
+    }
+
+    return response.data.content[0].text.trim();
+  }
+
   private async callClaude(
     prompt: string,
     system: string | undefined,
