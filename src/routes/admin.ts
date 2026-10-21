@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { WhitelistService } from '../services/whitelist.service.js';
 import { accessRequestService } from '../services/accessRequest.service.js';
 import { evolution } from '../services/evolution.service.js';
+import { buildWelcomeMessage } from '../services/message.service.js';
 import { requireAuth, generateAdminToken } from '../middleware/auth.js';
 import { getEnv } from '../config/env.js';
 import { getDatabase } from '../config/database.js';
@@ -121,9 +122,10 @@ router.post('/admin/access-requests/:id/approve', requireAuth, async (req: Reque
     await whitelistService.addUser(request.phone_number, permittedUntil);
     await accessRequestService.resolve(id, 'approved');
 
+    const untilText = permittedUntil.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     await evolution.sendMessage(
       request.phone_number,
-      `🎉 Boas notícias! Seu acesso ao Memo foi liberado por ${days} dias.\n\nPode mandar mensagem que já te ajudo! 😊`
+      buildWelcomeMessage(request.name, days, untilText)
     );
 
     res.json({ success: true });

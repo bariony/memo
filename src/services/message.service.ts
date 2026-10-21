@@ -46,6 +46,33 @@ function withFollowUp(response: string): string {
   return response.trim().endsWith('?') ? response : response + FOLLOW_UP;
 }
 
+/**
+ * Warm, personalized access-granted message - used whether the admin
+ * approved via the WhatsApp "aprovar" command or the admin panel button.
+ * Falls back to a neutral greeting if no name was on file for some reason.
+ */
+export function buildWelcomeMessage(name: string | null | undefined, days: number, untilText: string): string {
+  const greeting = name ? `Boas notícias, ${name}! 🎉` : '🎉 Boas notícias!';
+  return `${greeting}\n\nSeu acesso ao Memo foi liberado por ${days} dias (até ${untilText}). Sou seu assistente pessoal de bolso - posso te ajudar a registrar gastos, criar lembretes e tirar dúvidas do dia a dia.\n\nManda aí o que precisar! 😊`;
+}
+
+/**
+ * Loose yes/no read on a short free-text reply to "quer solicitar acesso?".
+ * Checks whole-message matches first (the common case - just "sim" or
+ * "não"), then falls back to word-boundary search within a longer reply.
+ */
+function detectYesNo(text: string): 'yes' | 'no' | 'unclear' {
+  const lower = text.trim().toLowerCase().replace(/[.!?]/g, '');
+
+  if (['sim', 's', 'quero', 'com certeza', 'claro', 'bora', 'positivo', 'isso'].includes(lower)) return 'yes';
+  if (['não', 'nao', 'n', 'negativo', 'agora não', 'agora nao'].includes(lower)) return 'no';
+
+  if (/\bn(ã|a)o\b/.test(lower)) return 'no';
+  if (/\bsim\b/.test(lower) || /\bquero\b/.test(lower)) return 'yes';
+
+  return 'unclear';
+}
+
 export class MessageService {
   private claudeService = new ClaudeService();
   private whitelistService = new WhitelistService();
@@ -118,7 +145,7 @@ export class MessageService {
       if (request) await accessRequestService.resolve(request.id, 'approved');
 
       const dateText = formatDateTime(permittedUntil).split(',')[0];
-      const userMsg = `🎉 Boas notícias! Seu acesso ao Memo foi liberado por ${TRIAL_DAYS} dias (até ${dateText}).\n\nPode mandar mensagem que já te ajudo! 😊`;
+      const userMsg = buildWelcomeMessage(request?.name, TRIAL_DAYS, dateText);
       await this.evolutionService.sendMessage(targetPhone, userMsg);
 
       const reply = request
@@ -141,31 +168,56 @@ export class MessageService {
   }
 
   /**
-   * A brand-new, never-seen number messaging the bot: asks for a name (so
-   * the admin notification is a person, not just a digit string), then
-   * opens an access request and pings the admin on WhatsApp - instead of
-   * just pointing the person at a phone number and leaving Igor with no
-   * idea anyone even tried.
+   * A brand-new, never-seen number messaging the bot. Gated flow so a
+   * wrong number or random text doesn't turn into an admin notification:
+   * ask "want access?" first, only ask the name (and notify the admin) on
+   * an explicit yes, and stop pinging again on an explicit no.
    */
   private async handleNewContactRequest(phone: string, messageText: string): Promise<string> {
     const pool = getDatabase();
     await pool.query('INSERT INTO users (phone_number) VALUES ($1) ON CONFLICT DO NOTHING', [phone]);
 
     const userResult = await pool.query(
-      'SELECT name, name_requested_at FROM users WHERE phone_number = $1',
+      'SELECT name, name_requested_at, access_prompt_sent_at, access_prompt_status FROM users WHERE phone_number = $1',
       [phone]
     );
-    const user = userResult.rows[0] as { name: string | null; name_requested_at: Date | null };
+    const user = userResult.rows[0] as {
+      name: string | null;
+      name_requested_at: Date | null;
+      access_prompt_sent_at: Date | null;
+      access_prompt_status: string | null;
+    };
 
-    if (!user.name) {
-      if (!user.name_requested_at) {
-        await pool.query('UPDATE users SET name_requested_at = NOW() WHERE phone_number = $1', [phone]);
-        const msg = 'Oi! 👋 Eu sou o Memo, assistente pessoal via WhatsApp.\n\nVi que você ainda não tem acesso por aqui, mas posso já encaminhar seu pedido de liberação. Como você se chama? 😊';
-        await this.evolutionService.sendMessage(phone, msg);
-        await this.logMessage(phone, messageText, 'access_request_name', msg);
-        return msg;
+    // Name already known: this contact already made it past the gate at
+    // some point (pending, or previously denied and trying again). Don't
+    // re-notify the admin on every repeat message, just reassure them.
+    if (user.name) {
+      const pending = await accessRequestService.findPendingByPhone(phone);
+      const msg = pending
+        ? `Oi, ${user.name}! Seu pedido de acesso ainda está aguardando liberação do administrador. Assim que for aprovado, te aviso por aqui 😊`
+        : `Oi, ${user.name}! Vou encaminhar seu pedido de acesso de novo para o administrador.`;
+
+      if (!pending) {
+        await accessRequestService.createIfNotPending(phone, user.name);
+        const adminMsg = `🔔 *Nova solicitação de acesso*\n\n👤 Nome: ${user.name}\n📱 WhatsApp: ${phone}\n\nResponda *aprovar ${phone}* para liberar ${TRIAL_DAYS} dias de teste, ou *negar ${phone}* para recusar.`;
+        await this.evolutionService.sendMessage(getEnv().ADMIN_PHONE_NUMBER, adminMsg);
       }
 
+      await this.evolutionService.sendMessage(phone, msg);
+      await this.logMessage(phone, messageText, 'access_request_reminder', msg);
+      return msg;
+    }
+
+    // Already said no before - don't keep re-asking or bothering the admin.
+    if (user.access_prompt_status === 'declined') {
+      const msg = 'Oi! Se quiser solicitar acesso ao Memo é só me avisar por aqui 😊';
+      await this.evolutionService.sendMessage(phone, msg);
+      await this.logMessage(phone, messageText, 'access_prompt_declined_followup', msg);
+      return msg;
+    }
+
+    // Already said yes - this message is their answer to "como se chama?".
+    if (user.access_prompt_status === 'confirmed') {
       const name = extractName(messageText);
       await pool.query('UPDATE users SET name = $1 WHERE phone_number = $2', [name, phone]);
 
@@ -181,22 +233,38 @@ export class MessageService {
       return msg;
     }
 
-    // Name already known - this person already went through the flow once
-    // (pending, or previously denied and trying again). Don't re-notify
-    // the admin on every repeat message, just reassure them.
-    const pending = await accessRequestService.findPendingByPhone(phone);
-    const msg = pending
-      ? `Oi, ${user.name}! Seu pedido de acesso ainda está aguardando liberação do administrador. Assim que for aprovado, te aviso por aqui 😊`
-      : `Oi, ${user.name}! Vou encaminhar seu pedido de acesso de novo para o administrador.`;
-
-    if (!pending) {
-      await accessRequestService.createIfNotPending(phone, user.name);
-      const adminMsg = `🔔 *Nova solicitação de acesso*\n\n👤 Nome: ${user.name}\n📱 WhatsApp: ${phone}\n\nResponda *aprovar ${phone}* para liberar ${TRIAL_DAYS} dias de teste, ou *negar ${phone}* para recusar.`;
-      await this.evolutionService.sendMessage(getEnv().ADMIN_PHONE_NUMBER, adminMsg);
+    // Gate not sent yet - first message ever from this number.
+    if (!user.access_prompt_sent_at) {
+      await pool.query('UPDATE users SET access_prompt_sent_at = NOW() WHERE phone_number = $1', [phone]);
+      const msg = 'Oi! 👋 Eu sou o Memo, seu assistente pessoal de bolso — ajudo a organizar gastos, lembretes e tirar dúvidas do dia a dia pelo WhatsApp.\n\nVi que você ainda não tem acesso por aqui. Quer solicitar? Responda *sim* ou *não* 😊';
+      await this.evolutionService.sendMessage(phone, msg);
+      await this.logMessage(phone, messageText, 'access_prompt_sent', msg);
+      return msg;
     }
 
+    // Gate already sent, no answer recorded yet - this message is that answer.
+    const answer = detectYesNo(messageText);
+
+    if (answer === 'no') {
+      await pool.query("UPDATE users SET access_prompt_status = 'declined' WHERE phone_number = $1", [phone]);
+      const msg = 'Sem problemas! Se mudar de ideia, é só me chamar por aqui 😊';
+      await this.evolutionService.sendMessage(phone, msg);
+      await this.logMessage(phone, messageText, 'access_prompt_declined', msg);
+      return msg;
+    }
+
+    if (answer === 'unclear') {
+      const msg = 'Não entendi — quer solicitar acesso ao Memo? Responda *sim* ou *não* 😊';
+      await this.evolutionService.sendMessage(phone, msg);
+      await this.logMessage(phone, messageText, 'access_prompt_unclear', msg);
+      return msg;
+    }
+
+    // 'yes'
+    await pool.query("UPDATE users SET access_prompt_status = 'confirmed' WHERE phone_number = $1", [phone]);
+    const msg = 'Boa! Como você se chama? 😊';
     await this.evolutionService.sendMessage(phone, msg);
-    await this.logMessage(phone, messageText, 'access_request_reminder', msg);
+    await this.logMessage(phone, messageText, 'access_prompt_confirmed', msg);
     return msg;
   }
 
