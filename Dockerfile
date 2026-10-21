@@ -1,5 +1,10 @@
 FROM node:20-alpine
 
+# Needed to transcode WhatsApp voice notes (ogg/Opus) into a format
+# OpenAI's transcription API actually accepts - ogg isn't in its supported
+# input list.
+RUN apk add --no-cache ffmpeg
+
 WORKDIR /app
 
 COPY package*.json ./
