@@ -119,21 +119,8 @@ html, body {
   z-index: 1;
 }
 
-.brand-word {
-  font-family: 'Bricolage Grotesque', var(--font-family);
-  font-weight: 700;
-  font-size: 20px;
-  letter-spacing: -0.6px;
-  color: #fff;
-  display: inline-flex;
-  align-items: baseline;
-}
-
-.brand-bell {
-  display: inline-block;
-  margin-left: 2px;
-  transform: rotate(14deg);
-  transform-origin: 0 -3px;
+.brand-img {
+  display: block;
 }
 
 .logo-badge {
