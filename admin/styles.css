@@ -119,26 +119,21 @@ html, body {
   z-index: 1;
 }
 
-.logo-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--grad);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  font-weight: 800;
+.brand-word {
+  font-family: 'Bricolage Grotesque', var(--font-family);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.6px;
   color: #fff;
-  flex-shrink: 0;
-  box-shadow: 0 4px 14px rgba(37, 211, 102, 0.35);
-  letter-spacing: -0.5px;
+  display: inline-flex;
+  align-items: baseline;
 }
 
-.logo-text {
-  font-weight: 700;
-  font-size: 16px;
-  letter-spacing: -0.3px;
+.brand-bell {
+  display: inline-block;
+  margin-left: 2px;
+  transform: rotate(14deg);
+  transform-origin: 0 -3px;
 }
 
 .logo-badge {
