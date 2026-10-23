@@ -11,13 +11,16 @@ export async function initializeReminderWorker() {
       const pool = getDatabase();
 
       try {
-        await evolution.sendMessage(phone, message);
-
         const result = await pool.query(
-          'SELECT type, scheduled_for FROM reminders WHERE id = $1',
+          'SELECT type, scheduled_for, sent FROM reminders WHERE id = $1',
           [reminderId]
         );
         const reminder = result.rows[0];
+
+        // Cancelled (row deleted) or already delivered: don't send.
+        if (!reminder || reminder.sent) return;
+
+        await evolution.sendMessage(phone, message);
 
         if (reminder?.type === 'recurring') {
           // Reschedule the same reminder for the same time tomorrow instead

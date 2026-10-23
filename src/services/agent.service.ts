@@ -1,0 +1,263 @@
+import axios from 'axios';
+import { getEnv } from '../config/env.js';
+import { retryWithBackoff } from '../utils/resilience.js';
+import { ClaudeService, ConversationTurn } from './claude.service.js';
+import { ExpenseService } from './expense.service.js';
+import { ReminderService } from './reminder.service.js';
+
+const TZ = 'America/Sao_Paulo';
+// Brazil has no DST since 2019, so São Paulo is a fixed UTC-3.
+const TZ_OFFSET = '-03:00';
+const MAX_STEPS = 6;
+
+const WMO: Record<number, string> = {
+  0: 'céu limpo', 1: 'predominantemente limpo', 2: 'parcialmente nublado', 3: 'nublado',
+  45: 'neblina', 48: 'neblina', 51: 'garoa fraca', 53: 'garoa', 55: 'garoa forte',
+  61: 'chuva fraca', 63: 'chuva', 65: 'chuva forte', 80: 'pancadas fracas', 81: 'pancadas de chuva',
+  82: 'pancadas fortes', 95: 'trovoadas', 96: 'trovoadas com granizo', 99: 'trovoadas com granizo',
+};
+
+const TOOLS = [
+  {
+    name: 'create_reminders',
+    description:
+      'Agenda um ou mais lembretes. Use UMA chamada com todos os horários quando o usuário pedir vários avisos (ex: evento às 13h com avisos às 12:00 e 12:45 = 2 itens, um para cada aviso; inclua também o horário do evento só se o usuário pedir). Datas em horário de São Paulo.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        reminders: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              datetime_local: { type: 'string', description: 'Data e hora no horário de São Paulo, formato YYYY-MM-DDTHH:mm' },
+              message: { type: 'string', description: 'Texto que será enviado ao usuário na hora do aviso, ex: "Audiência hoje às 13h (daqui a 1 hora)"' },
+              daily: { type: 'boolean', description: 'true se repete todo dia nesse horário' },
+            },
+            required: ['datetime_local', 'message'],
+          },
+        },
+      },
+      required: ['reminders'],
+    },
+  },
+  {
+    name: 'list_reminders',
+    description: 'Lista os lembretes futuros do usuário, com id. Use antes de cancelar/corrigir, ou para responder o que está agendado.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'cancel_reminder',
+    description: 'Cancela um lembrete pelo id (obtido em list_reminders ou create_reminders). Para corrigir data/hora: cancele o errado e crie o certo.',
+    input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+  },
+  {
+    name: 'log_expense',
+    description: 'Registra uma despesa SOMENTE quando o usuário claramente informou um gasto com valor numérico.',
+    input_schema: {
+      type: 'object',
+      properties: { amount: { type: 'number' }, description: { type: 'string' } },
+      required: ['amount', 'description'],
+    },
+  },
+  {
+    name: 'get_expenses',
+    description: 'Consulta as despesas registradas do usuário nos últimos N dias e o total.',
+    input_schema: { type: 'object', properties: { days: { type: 'number', description: 'padrão 7' } } },
+  },
+  {
+    name: 'get_weather',
+    description: 'Previsão do tempo atual e dos próximos dias para uma cidade (dados reais). Use sempre que perguntarem do tempo/chuva/temperatura.',
+    input_schema: { type: 'object', properties: { city: { type: 'string', description: 'ex: São Paulo' } }, required: ['city'] },
+  },
+];
+
+function nowParts() {
+  const now = new Date();
+  const text = now.toLocaleString('pt-BR', {
+    timeZone: TZ, weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+  const iso = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  }).format(now).replace(' ', 'T');
+  return { text, iso };
+}
+
+function fmt(d: Date): string {
+  return d.toLocaleString('pt-BR', { timeZone: TZ, weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+export class AgentService {
+  private apiUrl = 'https://api.anthropic.com/v1/messages';
+  private model = process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001';
+
+  constructor(
+    private claude = new ClaudeService(),
+    private expenses = new ExpenseService(),
+    private reminders = new ReminderService()
+  ) {}
+
+  private async executeTool(phone: string, name: string, input: any): Promise<string> {
+    try {
+      switch (name) {
+        case 'create_reminders': {
+          const items: any[] = Array.isArray(input?.reminders) ? input.reminders : [];
+          if (items.length === 0) return 'Erro: nenhum lembrete informado.';
+          const parsed = items.map((r) => ({
+            when: new Date(`${String(r.datetime_local).slice(0, 16)}:00${TZ_OFFSET}`),
+            message: String(r.message || '').trim(),
+            daily: Boolean(r.daily),
+          }));
+          const bad = parsed.find((p) => isNaN(p.when.getTime()) || !p.message);
+          if (bad) return 'Erro: data/hora inválida ou mensagem vazia. Use YYYY-MM-DDTHH:mm.';
+          const past = parsed.find((p) => p.when.getTime() <= Date.now());
+          if (past) return `Erro: ${fmt(past.when)} já passou. Confirme a data com o usuário.`;
+          const out: string[] = [];
+          for (const p of parsed) {
+            const r = await this.reminders.scheduleReminder(phone, p.when, p.message, p.daily);
+            out.push(`id=${r.id} em ${fmt(p.when)}${p.daily ? ' (todo dia)' : ''}: ${p.message}`);
+          }
+          return `Agendado com sucesso:\n${out.join('\n')}`;
+        }
+        case 'list_reminders': {
+          const list = await this.reminders.getUpcomingReminders(phone);
+          if (!list.length) return 'Nenhum lembrete futuro.';
+          return list
+            .map((r) => `id=${r.id} em ${fmt(new Date(r.scheduled_for))}${r.type === 'recurring' ? ' (todo dia)' : ''}: ${r.message}`)
+            .join('\n');
+        }
+        case 'cancel_reminder': {
+          const ok = await this.reminders.cancelReminder(phone, String(input?.id));
+          return ok ? 'Lembrete cancelado.' : 'Erro: lembrete não encontrado.';
+        }
+        case 'log_expense': {
+          const amount = Number(input?.amount);
+          const description = String(input?.description || '').trim();
+          if (!Number.isFinite(amount) || amount <= 0 || !description) return 'Erro: valor ou descrição inválidos, nada foi registrado.';
+          await this.expenses.logExpense(phone, amount, description);
+          const today = await this.expenses.getTodayTotal(phone);
+          return `Registrado R$${amount.toFixed(2)} em ${description}. Hoje: ${today.count} despesa(s), total R$${today.total.toFixed(2)}.`;
+        }
+        case 'get_expenses': {
+          const days = Math.min(Math.max(Number(input?.days) || 7, 1), 365);
+          const list = await this.expenses.getRecentExpenses(phone, days);
+          if (!list.length) return `Nenhum gasto nos últimos ${days} dias.`;
+          const total = list.reduce((s, e) => s + Number(e.amount), 0);
+          return `${list.map((e) => `R$${Number(e.amount).toFixed(2)} em ${e.description} (${new Date(e.created_at).toLocaleDateString('pt-BR', { timeZone: TZ })})`).join('; ')}. Total: R$${total.toFixed(2)}`;
+        }
+        case 'get_weather':
+          return await this.getWeather(String(input?.city || 'São Paulo'));
+        default:
+          return `Erro: ferramenta desconhecida ${name}`;
+      }
+    } catch (err: any) {
+      console.error(`Tool ${name} failed:`, err?.message || err);
+      return `Erro ao executar ${name}: ${err?.message || 'falha desconhecida'}`;
+    }
+  }
+
+  private async getWeather(city: string): Promise<string> {
+    const geo = await axios.get('https://geocoding-api.open-meteo.com/v1/search', {
+      params: { name: city, count: 1, language: 'pt', country_code: 'BR' },
+      timeout: 8000,
+    });
+    const place = geo.data?.results?.[0];
+    if (!place) return `Não encontrei a cidade "${city}".`;
+    const w = await axios.get('https://api.open-meteo.com/v1/forecast', {
+      params: {
+        latitude: place.latitude,
+        longitude: place.longitude,
+        current: 'temperature_2m,apparent_temperature,weather_code',
+        daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,weather_code',
+        timezone: TZ,
+        forecast_days: 3,
+      },
+      timeout: 8000,
+    });
+    const c = w.data.current;
+    const d = w.data.daily;
+    const days = d.time.map(
+      (t: string, i: number) =>
+        `${t}: ${WMO[d.weather_code[i]] ?? 'tempo variável'}, ${Math.round(d.temperature_2m_min[i])}° a ${Math.round(d.temperature_2m_max[i])}°C, chance de chuva ${d.precipitation_probability_max[i]}% (${d.precipitation_sum[i]} mm)`
+    );
+    return `${place.name}-${place.admin1 || ''}. Agora: ${Math.round(c.temperature_2m)}°C (sensação ${Math.round(c.apparent_temperature)}°C), ${WMO[c.weather_code] ?? 'tempo variável'}.\n${days.join('\n')}`;
+  }
+
+  /**
+   * Conversational agent: Claude sees the full recent conversation plus
+   * tools, and decides itself whether to reply, ask, schedule, log, look up
+   * weather, etc. - instead of a one-shot intent classifier per message.
+   */
+  async respond(
+    phone: string,
+    messageText: string,
+    systemPrompt: string,
+    history: ConversationTurn[]
+  ): Promise<{ text: string; toolsUsed: string[] }> {
+    const now = nowParts();
+    const system = `${systemPrompt}
+
+═══ CONTEXTO DE AGORA ═══
+Agora: ${now.text} (${now.iso}, horário de São Paulo, UTC-3).
+Você tem ferramentas e DEVE usá-las em vez de dizer que não consegue: lembretes (criar, listar, cancelar), despesas (registrar, consultar) e previsão do tempo.
+
+Regras de conversa:
+- Leia TODA a conversa anterior. Mensagens curtas como "27/10", "às 13h", "sim" ou correções ("errei a data") continuam o assunto anterior - nunca as trate como pedido novo isolado.
+- Se o usuário corrigir um lembrete que você criou, use list_reminders, cancele o errado com cancel_reminder e crie o certo.
+- Lembretes: "me lembra 1h antes" ou "às 12:00 e 12:45" significam avisos nesses horários antes do evento. Crie TODOS os avisos pedidos numa única chamada. A mensagem de cada aviso deve dizer o que é e quando (ex: "Audiência às 13h - falta 1 hora"). Se faltar data ou hora, pergunte só o que falta; se o ano não for dito, use o próximo dia futuro com aquela data.
+- Só registre despesa quando houver um gasto com valor claro. Nunca registre despesa a partir de correção, pergunta ou lembrete.
+- Previsão do tempo: use get_weather. Se não souber a cidade, pergunte; se o usuário já disse a cidade/bairro na conversa, use-a. Nunca mande o usuário "olhar no Google/Climatempo".
+- Depois de usar ferramentas, confirme de forma natural e curta, citando datas e horas exatas agendadas. Se uma ferramenta der erro, diga isso com clareza e não finja que deu certo.
+- Texto de WhatsApp: curto, sem markdown pesado.`;
+
+    const messages: any[] = [
+      ...history.map((t) => ({ role: t.role, content: t.content })),
+      { role: 'user', content: messageText },
+    ];
+    const toolsUsed: string[] = [];
+
+    for (let step = 0; step < MAX_STEPS; step++) {
+      const res = await retryWithBackoff(
+        () =>
+          axios.post(
+            this.apiUrl,
+            { model: this.model, max_tokens: 1024, system, tools: TOOLS, messages },
+            {
+              headers: {
+                'anthropic-version': '2023-06-01',
+                'x-api-key': getEnv().CLAUDE_API_KEY,
+                'content-type': 'application/json',
+              },
+              timeout: 30000,
+            }
+          ),
+        2,
+        500
+      );
+
+      const usage = res.data.usage;
+      if (usage) {
+        this.claude
+          .logTokenUsage(phone, (usage.input_tokens || 0) + (usage.output_tokens || 0), 'agent')
+          .catch((e) => console.error('Failed to log token usage:', e));
+      }
+
+      const content: any[] = res.data.content || [];
+      const toolCalls = content.filter((b) => b.type === 'tool_use');
+      if (res.data.stop_reason !== 'tool_use' || toolCalls.length === 0) {
+        const text = content.filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+        return { text: text || 'Desculpe, não consegui formular uma resposta. Pode repetir?', toolsUsed };
+      }
+
+      messages.push({ role: 'assistant', content });
+      const results = [];
+      for (const call of toolCalls) {
+        toolsUsed.push(call.name);
+        results.push({ type: 'tool_result', tool_use_id: call.id, content: await this.executeTool(phone, call.name, call.input) });
+      }
+      messages.push({ role: 'user', content: results });
+    }
+
+    return { text: 'Desculpe, me enrolei aqui. Pode repetir o pedido de outro jeito?', toolsUsed };
+  }
+}
