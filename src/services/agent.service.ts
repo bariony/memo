@@ -32,7 +32,11 @@ const TOOLS = [
             properties: {
               datetime_local: { type: 'string', description: 'Data e hora no horário de São Paulo, formato YYYY-MM-DDTHH:mm' },
               message: { type: 'string', description: 'Texto que será enviado ao usuário na hora do aviso, ex: "Audiência hoje às 13h (daqui a 1 hora)"' },
-              daily: { type: 'boolean', description: 'true se repete todo dia nesse horário' },
+              repeat_days: {
+                type: 'array',
+                items: { type: 'string', enum: ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] },
+                description: 'Dias da semana em que repete (ex: ["TU"] = toda terça; todos os 7 = todo dia). Omita se não repete. datetime_local deve ser a PRÓXIMA ocorrência.',
+              },
             },
             required: ['datetime_local', 'message'],
           },
@@ -72,6 +76,14 @@ const TOOLS = [
   },
 ];
 
+const DAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+const DAY_NAMES: Record<string, string> = { SU: 'domingo', MO: 'segunda', TU: 'terça', WE: 'quarta', TH: 'quinta', FR: 'sexta', SA: 'sábado' };
+
+function describeRule(rule?: string | null): string {
+  const days = (rule?.match(/BYDAY=([A-Z,]+)/)?.[1] || '').split(',').filter(Boolean);
+  return days.length ? `toda ${days.map((d) => DAY_NAMES[d]).join(' e ')}` : 'todo dia';
+}
+
 function nowParts() {
   const now = new Date();
   const text = now.toLocaleString('pt-BR', {
@@ -89,7 +101,7 @@ function fmt(d: Date): string {
 
 export class AgentService {
   private apiUrl = 'https://api.anthropic.com/v1/messages';
-  private model = process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001';
+  private model = process.env.CLAUDE_MODEL || 'claude-sonnet-4-5';
 
   constructor(
     private claude = new ClaudeService(),
@@ -106,7 +118,7 @@ export class AgentService {
           const parsed = items.map((r) => ({
             when: new Date(`${String(r.datetime_local).slice(0, 16)}:00${TZ_OFFSET}`),
             message: String(r.message || '').trim(),
-            daily: Boolean(r.daily),
+            days: Array.isArray(r.repeat_days) ? r.repeat_days.filter((d: string) => DAY_CODES.includes(d)) : [],
           }));
           const bad = parsed.find((p) => isNaN(p.when.getTime()) || !p.message);
           if (bad) return 'Erro: data/hora inválida ou mensagem vazia. Use YYYY-MM-DDTHH:mm.';
@@ -114,8 +126,15 @@ export class AgentService {
           if (past) return `Erro: ${fmt(past.when)} já passou. Confirme a data com o usuário.`;
           const out: string[] = [];
           for (const p of parsed) {
-            const r = await this.reminders.scheduleReminder(phone, p.when, p.message, p.daily);
-            out.push(`id=${r.id} em ${fmt(p.when)}${p.daily ? ' (todo dia)' : ''}: ${p.message}`);
+            // Make sure the first occurrence actually falls on a requested weekday.
+            if (p.days.length && p.days.length < 7) {
+              for (let i = 0; i < 7 && !p.days.includes(DAY_CODES[new Date(p.when.getTime() - 3 * 3600e3).getUTCDay()]); i++) {
+                p.when = new Date(p.when.getTime() + 24 * 3600e3);
+              }
+            }
+            const rule = p.days.length === 0 ? null : p.days.length === 7 ? 'FREQ=DAILY' : `FREQ=WEEKLY;BYDAY=${p.days.join(',')}`;
+            const r = await this.reminders.scheduleReminder(phone, p.when, p.message, p.days.length > 0, rule);
+            out.push(`id=${r.id} em ${fmt(p.when)}${rule ? ` (repete: ${describeRule(rule)})` : ''}: ${p.message}`);
           }
           return `Agendado com sucesso:\n${out.join('\n')}`;
         }
@@ -123,7 +142,7 @@ export class AgentService {
           const list = await this.reminders.getUpcomingReminders(phone);
           if (!list.length) return 'Nenhum lembrete futuro.';
           return list
-            .map((r) => `id=${r.id} em ${fmt(new Date(r.scheduled_for))}${r.type === 'recurring' ? ' (todo dia)' : ''}: ${r.message}`)
+            .map((r) => `id=${r.id} em ${fmt(new Date(r.scheduled_for))}${r.type === 'recurring' ? ` (repete: ${describeRule(r.recurrence_rule)})` : ''}: ${r.message}`)
             .join('\n');
         }
         case 'cancel_reminder': {
@@ -195,7 +214,21 @@ export class AgentService {
     history: ConversationTurn[]
   ): Promise<{ text: string; toolsUsed: string[] }> {
     const now = nowParts();
-    const system = `${systemPrompt}
+    const [upcoming, month, today] = await Promise.all([
+      this.reminders.getUpcomingReminders(phone).catch(() => []),
+      this.expenses.getMonthTotal(phone).catch(() => null),
+      this.expenses.getTodayTotal(phone).catch(() => null),
+    ]);
+    const reminderCtx = upcoming.length
+      ? upcoming.slice(0, 30).map((r) => `- id=${r.id} ${fmt(new Date(r.scheduled_for))}${r.type === 'recurring' ? ` (repete: ${describeRule(r.recurrence_rule)})` : ''}: ${r.message}`).join('\n')
+      : '(nenhum)';
+    const profile = `
+
+═══ O QUE VOCÊ JÁ SABE SOBRE ESTE USUÁRIO ═══
+Lembretes agendados:
+${reminderCtx}
+Gastos: hoje ${today ? `${today.count} (R$${today.total.toFixed(2)})` : 'n/d'}; mês ${month ? `${month.count} (R$${month.total.toFixed(2)})` : 'n/d'}.`;
+    const system = `${systemPrompt}${profile}
 
 ═══ CONTEXTO DE AGORA ═══
 Agora: ${now.text} (${now.iso}, horário de São Paulo, UTC-3).
@@ -203,7 +236,9 @@ Você tem ferramentas e DEVE usá-las em vez de dizer que não consegue: lembret
 
 Regras de conversa:
 - Leia TODA a conversa anterior. Mensagens curtas como "27/10", "às 13h", "sim" ou correções ("errei a data") continuam o assunto anterior - nunca as trate como pedido novo isolado.
-- Se o usuário corrigir um lembrete que você criou, use list_reminders, cancele o errado com cancel_reminder e crie o certo.
+- Se o usuário corrigir um lembrete (ex: "errei, era 11/10"), entenda o que mudou, MANTENHA o resto (horário, texto, repetição), cancele o antigo e crie o novo, e responda como um amigo: "Ok, Igor! Troquei para 11/10, o horário continua 13h. Já atualizei aqui, fica tranquilo!". Confirme só o que mudou e o que ficou.
+- Recorrência: "toda terça" = repeat_days ["TU"], "todo dia" = os 7 dias, "terça e quinta" = ["TU","TH"]. Na confirmação diga exatamente a recorrência criada ("toda terça às 18h"), nunca "todos os dias" se não for.
+- Interprete a intenção real da pessoa, não palavras-chave. Se algo for realmente ambíguo, faça UMA pergunta curta; se der para inferir com segurança, resolva e confirme.
 - Lembretes: "me lembra 1h antes" ou "às 12:00 e 12:45" significam avisos nesses horários antes do evento. Crie TODOS os avisos pedidos numa única chamada. A mensagem de cada aviso deve dizer o que é e quando (ex: "Audiência às 13h - falta 1 hora"). Se faltar data ou hora, pergunte só o que falta; se o ano não for dito, use o próximo dia futuro com aquela data.
 - Só registre despesa quando houver um gasto com valor claro. Nunca registre despesa a partir de correção, pergunta ou lembrete.
 - Previsão do tempo: use get_weather. Se não souber a cidade, pergunte; se o usuário já disse a cidade/bairro na conversa, use-a. Nunca mande o usuário "olhar no Google/Climatempo".

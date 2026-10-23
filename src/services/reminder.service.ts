@@ -17,7 +17,8 @@ export class ReminderService {
     phone: string,
     scheduledFor: Date,
     message: string,
-    isRecurring: boolean = false
+    isRecurring: boolean = false,
+    recurrenceRule: string | null = null
   ): Promise<Reminder> {
     const pool = getDatabase();
 
@@ -28,7 +29,7 @@ export class ReminderService {
         isRecurring ? 'recurring' : 'one_time',
         scheduledFor,
         message,
-        isRecurring ? `FREQ=DAILY;BYHOUR=${scheduledFor.getHours()}` : null
+        isRecurring ? (recurrenceRule || 'FREQ=DAILY') : null
       ]
     );
 
