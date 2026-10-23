@@ -4,6 +4,7 @@ import { retryWithBackoff } from '../utils/resilience.js';
 import { ClaudeService, ConversationTurn } from './claude.service.js';
 import { ExpenseService } from './expense.service.js';
 import { ReminderService } from './reminder.service.js';
+import { DataService, localRange } from './data.service.js';
 
 const TZ = 'America/Sao_Paulo';
 // Brazil has no DST since 2019, so São Paulo is a fixed UTC-3.
@@ -57,17 +58,54 @@ const TOOLS = [
   },
   {
     name: 'log_expense',
-    description: 'Registra uma despesa SOMENTE quando o usuário claramente informou um gasto com valor numérico.',
+    description: 'Registra uma despesa SOMENTE quando o usuário claramente informou um gasto com valor numérico. Escolha uma categoria curta (Mercado, Transporte, Alimentação, Moradia, Saúde, Lazer, Contas, Outros). Se disser "ontem"/outra data, passe date.',
     input_schema: {
       type: 'object',
-      properties: { amount: { type: 'number' }, description: { type: 'string' } },
+      properties: {
+        amount: { type: 'number' }, description: { type: 'string' }, category: { type: 'string' },
+        date: { type: 'string', description: 'YYYY-MM-DD, se o gasto não foi hoje' },
+      },
       required: ['amount', 'description'],
     },
   },
   {
     name: 'get_expenses',
-    description: 'Consulta as despesas registradas do usuário nos últimos N dias e o total.',
-    input_schema: { type: 'object', properties: { days: { type: 'number', description: 'padrão 7' } } },
+    description: 'Lista despesas de um período (com id) e devolve total e subtotal por categoria JÁ CALCULADOS. Use para qualquer pergunta sobre quanto/onde gastou (hoje, semana, mês). Nunca some de cabeça.',
+    input_schema: { type: 'object', properties: { from_date: { type: 'string', description: 'YYYY-MM-DD' }, to_date: { type: 'string', description: 'YYYY-MM-DD (inclusive); padrão = from_date' } }, required: ['from_date'] },
+  },
+  {
+    name: 'update_expense',
+    description: 'Corrige valor/descrição/categoria de uma despesa pelo id (de get_expenses).',
+    input_schema: { type: 'object', properties: { id: { type: 'string' }, amount: { type: 'number' }, description: { type: 'string' }, category: { type: 'string' } }, required: ['id'] },
+  },
+  {
+    name: 'delete_expense',
+    description: 'Apaga uma despesa pelo id (de get_expenses).',
+    input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+  },
+  {
+    name: 'save_note',
+    description: 'Guarda um registro/anotação com data e hora que o usuário quer lembrar depois (ex: "saí da empresa hoje às 10h" para folha de ponto, ideias, informações). Use quando a pessoa pedir para gravar/anotar/deixar salvo ou relatar algo que parece registro pessoal.',
+    input_schema: {
+      type: 'object',
+      properties: { text: { type: 'string' }, datetime_local: { type: 'string', description: 'Quando o fato ocorreu, YYYY-MM-DDTHH:mm (São Paulo). Omita para agora.' } },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'get_notes',
+    description: 'Busca anotações salvas num período, opcionalmente filtrando por texto (ex: "saí", "entrei"). Para folha de ponto, liste por dia.',
+    input_schema: { type: 'object', properties: { from_date: { type: 'string' }, to_date: { type: 'string' }, query: { type: 'string' } }, required: ['from_date'] },
+  },
+  {
+    name: 'delete_note',
+    description: 'Apaga uma anotação pelo id (de get_notes).',
+    input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+  },
+  {
+    name: 'reset_data',
+    description: 'DESTRUTIVO: apaga tudo do usuário no escopo (expenses, reminders, notes ou all) para começar do zero. Só chame com confirmed=true DEPOIS que o usuário confirmou explicitamente numa mensagem, depois de você avisar o que será apagado.',
+    input_schema: { type: 'object', properties: { scope: { type: 'string', enum: ['expenses', 'reminders', 'notes', 'all'] }, confirmed: { type: 'boolean' } }, required: ['scope', 'confirmed'] },
   },
   {
     name: 'get_weather',
@@ -106,7 +144,8 @@ export class AgentService {
   constructor(
     private claude = new ClaudeService(),
     private expenses = new ExpenseService(),
-    private reminders = new ReminderService()
+    private reminders = new ReminderService(),
+    private data = new DataService()
   ) {}
 
   private async executeTool(phone: string, name: string, input: any): Promise<string> {
@@ -153,16 +192,58 @@ export class AgentService {
           const amount = Number(input?.amount);
           const description = String(input?.description || '').trim();
           if (!Number.isFinite(amount) || amount <= 0 || !description) return 'Erro: valor ou descrição inválidos, nada foi registrado.';
-          await this.expenses.logExpense(phone, amount, description);
-          const today = await this.expenses.getTodayTotal(phone);
-          return `Registrado R$${amount.toFixed(2)} em ${description}. Hoje: ${today.count} despesa(s), total R$${today.total.toFixed(2)}.`;
+          let when: Date | undefined;
+          if (input?.date) {
+            const d = localRange(String(input.date));
+            if (!d) return 'Erro: data inválida.';
+            when = new Date(d.from.getTime() + 12 * 3600e3);
+          }
+          const id = await this.data.logExpense(phone, amount, description, input?.category ? String(input.category) : null, when);
+          return `Registrado (id=${id}) R$${amount.toFixed(2)} em ${description}.`;
         }
         case 'get_expenses': {
-          const days = Math.min(Math.max(Number(input?.days) || 7, 1), 365);
-          const list = await this.expenses.getRecentExpenses(phone, days);
-          if (!list.length) return `Nenhum gasto nos últimos ${days} dias.`;
+          const range = localRange(String(input?.from_date), input?.to_date ? String(input.to_date) : undefined);
+          if (!range) return 'Erro: datas inválidas, use YYYY-MM-DD.';
+          const list = await this.data.listExpenses(phone, range);
+          if (!list.length) return 'Nenhuma despesa nesse período.';
           const total = list.reduce((s, e) => s + Number(e.amount), 0);
-          return `${list.map((e) => `R$${Number(e.amount).toFixed(2)} em ${e.description} (${new Date(e.created_at).toLocaleDateString('pt-BR', { timeZone: TZ })})`).join('; ')}. Total: R$${total.toFixed(2)}`;
+          const byCat = new Map<string, number>();
+          for (const e of list) byCat.set(e.category || 'Sem categoria', (byCat.get(e.category || 'Sem categoria') || 0) + Number(e.amount));
+          const lines = list.map((e) => `id=${e.id} ${new Date(e.created_at).toLocaleDateString('pt-BR', { timeZone: TZ })} R$${Number(e.amount).toFixed(2)} ${e.description}${e.category ? ` [${e.category}]` : ''}`);
+          const cats = [...byCat.entries()].sort((a, b) => b[1] - a[1]).map(([c, v]) => `${c}: R$${v.toFixed(2)}`);
+          return `${list.length} despesa(s):\n${lines.join('\n')}\nTOTAL: R$${total.toFixed(2)}\nPor categoria: ${cats.join('; ')}`;
+        }
+        case 'update_expense': {
+          const amount = input?.amount === undefined ? undefined : Number(input.amount);
+          if (amount !== undefined && (!Number.isFinite(amount) || amount <= 0)) return 'Erro: valor inválido.';
+          const ok = await this.data.updateExpense(phone, String(input?.id), { amount, description: input?.description, category: input?.category });
+          return ok ? 'Despesa atualizada.' : 'Erro: despesa não encontrada.';
+        }
+        case 'delete_expense':
+          return (await this.data.deleteExpense(phone, String(input?.id))) ? 'Despesa apagada.' : 'Erro: despesa não encontrada.';
+        case 'save_note': {
+          const text = String(input?.text || '').trim();
+          if (!text) return 'Erro: texto vazio.';
+          let when: Date | undefined;
+          if (input?.datetime_local) {
+            when = new Date(`${String(input.datetime_local).slice(0, 16)}:00${TZ_OFFSET}`);
+            if (isNaN(when.getTime())) return 'Erro: data/hora inválida.';
+          }
+          await this.data.saveNote(phone, text, when);
+          return `Anotado em ${fmt(when ?? new Date())}: ${text}`;
+        }
+        case 'get_notes': {
+          const range = localRange(String(input?.from_date), input?.to_date ? String(input.to_date) : undefined);
+          if (!range) return 'Erro: datas inválidas.';
+          const list = await this.data.listNotes(phone, range, input?.query ? String(input.query) : undefined);
+          return list.length ? list.map((n) => `id=${n.id} ${fmt(new Date(n.occurred_at))}: ${n.text}`).join('\n') : 'Nenhuma anotação nesse período.';
+        }
+        case 'delete_note':
+          return (await this.data.deleteNote(phone, String(input?.id))) ? 'Anotação apagada.' : 'Erro: anotação não encontrada.';
+        case 'reset_data': {
+          if (input?.confirmed !== true) return 'Erro: o usuário ainda não confirmou. Pergunte e só então chame com confirmed=true.';
+          const counts = await this.data.reset(phone, input.scope);
+          return `Apagado: ${Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(', ')}.`;
         }
         case 'get_weather':
           return await this.getWeather(String(input?.city || 'São Paulo'));
@@ -214,11 +295,7 @@ export class AgentService {
     history: ConversationTurn[]
   ): Promise<{ text: string; toolsUsed: string[] }> {
     const now = nowParts();
-    const [upcoming, month, today] = await Promise.all([
-      this.reminders.getUpcomingReminders(phone).catch(() => []),
-      this.expenses.getMonthTotal(phone).catch(() => null),
-      this.expenses.getTodayTotal(phone).catch(() => null),
-    ]);
+    const upcoming = await this.reminders.getUpcomingReminders(phone).catch(() => []);
     const reminderCtx = upcoming.length
       ? upcoming.slice(0, 30).map((r) => `- id=${r.id} ${fmt(new Date(r.scheduled_for))}${r.type === 'recurring' ? ` (repete: ${describeRule(r.recurrence_rule)})` : ''}: ${r.message}`).join('\n')
       : '(nenhum)';
@@ -227,12 +304,12 @@ export class AgentService {
 ═══ O QUE VOCÊ JÁ SABE SOBRE ESTE USUÁRIO ═══
 Lembretes agendados:
 ${reminderCtx}
-Gastos: hoje ${today ? `${today.count} (R$${today.total.toFixed(2)})` : 'n/d'}; mês ${month ? `${month.count} (R$${month.total.toFixed(2)})` : 'n/d'}.`;
+(Gastos e anotações ficam no banco: consulte com get_expenses / get_notes, não dependa do histórico da conversa, que é só as últimas mensagens.)`;
     const system = `${systemPrompt}${profile}
 
 ═══ CONTEXTO DE AGORA ═══
 Agora: ${now.text} (${now.iso}, horário de São Paulo, UTC-3).
-Você tem ferramentas e DEVE usá-las em vez de dizer que não consegue: lembretes (criar, listar, cancelar), despesas (registrar, consultar) e previsão do tempo.
+Você tem ferramentas e DEVE usá-las em vez de dizer que não consegue: lembretes (criar, listar, cancelar), despesas (registrar, consultar, corrigir, apagar), anotações com data/hora (save_note/get_notes), apagar tudo para recomeçar (reset_data) e previsão do tempo.
 
 Regras de conversa:
 - Leia TODA a conversa anterior. Mensagens curtas como "27/10", "às 13h", "sim" ou correções ("errei a data") continuam o assunto anterior - nunca as trate como pedido novo isolado.
@@ -240,6 +317,9 @@ Regras de conversa:
 - Recorrência: "toda terça" = repeat_days ["TU"], "todo dia" = os 7 dias, "terça e quinta" = ["TU","TH"]. Na confirmação diga exatamente a recorrência criada ("toda terça às 18h"), nunca "todos os dias" se não for.
 - Interprete a intenção real da pessoa, não palavras-chave. Se algo for realmente ambíguo, faça UMA pergunta curta; se der para inferir com segurança, resolva e confirme.
 - Lembretes: "me lembra 1h antes" ou "às 12:00 e 12:45" significam avisos nesses horários antes do evento. Crie TODOS os avisos pedidos numa única chamada. A mensagem de cada aviso deve dizer o que é e quando (ex: "Audiência às 13h - falta 1 hora"). Se faltar data ou hora, pergunte só o que falta; se o ano não for dito, use o próximo dia futuro com aquela data.
+- Valores, totais e contagens vêm SEMPRE das ferramentas (get_expenses já soma e agrupa por categoria). Para "quanto gastei no mês", chame get_expenses do dia 1 até hoje e responda total e onde gastou.
+- Pedidos de gravar algo ("saí da empresa hoje às 10h, deixa gravado") = save_note com a data/hora do fato; depois pode compilar com get_notes (ex: folha de ponto do mês).
+- Apagar/corrigir gasto, lembrete ou anotação: busque o id na lista, aja e diga o que mudou. Para "apagar tudo/começar do zero": diga o que será apagado, peça confirmação e só então reset_data com confirmed=true.
 - Só registre despesa quando houver um gasto com valor claro. Nunca registre despesa a partir de correção, pergunta ou lembrete.
 - Previsão do tempo: use get_weather. Se não souber a cidade, pergunte; se o usuário já disse a cidade/bairro na conversa, use-a. Nunca mande o usuário "olhar no Google/Climatempo".
 - Depois de usar ferramentas, confirme de forma natural e curta, citando datas e horas exatas agendadas. Se uma ferramenta der erro, diga isso com clareza e não finja que deu certo.
