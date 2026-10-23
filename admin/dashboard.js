@@ -62,7 +62,7 @@ async function loadAnalytics(days) {
     const [usersData, messagesData, tokensData, expensesData] = await Promise.all([
       fetch(`/admin/users?days=${days}`, {
         headers: { 'Authorization': `Bearer ${token}` }
-      }).then(r => r.json()).catch(() => generateMockUsers(days)),
+      }).then(r => r.json()).catch(() => ({ data: [] })),
 
       fetch(`/admin/messages?days=${days}`, {
         headers: { 'Authorization': `Bearer ${token}` }

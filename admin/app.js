@@ -28,6 +28,21 @@ function toggleTheme() {
   setTheme(newTheme);
 }
 
+// Global 401 handler: an expired/invalid token must send the user back to login
+// instead of silently rendering empty lists and zeroed counters.
+const _origFetch = window.fetch.bind(window);
+window.fetch = async (input, init) => {
+  const res = await _origFetch(input, init);
+  const url = typeof input === 'string' ? input : (input && input.url) || '';
+  if (res.status === 401 && url.startsWith('/admin') && !url.startsWith('/admin/auth')) {
+    localStorage.removeItem('memo_token');
+    token = null;
+    showLogin();
+    showToast('Sessão expirada, entre novamente', '⚠️');
+  }
+  return res;
+};
+
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
