@@ -3,6 +3,21 @@ import { getBullMQConnection } from '../config/redis.js';
 import { getDatabase } from '../config/database.js';
 import { evolution } from '../services/evolution.service.js';
 
+const DAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+
+/** Next occurrence after `from` for FREQ=DAILY or FREQ=WEEKLY;BYDAY=TU,TH (São Paulo is a fixed UTC-3, so weekday math is done on the -3h shifted clock). */
+export function nextOccurrence(from: Date, rule?: string | null): Date {
+  const days = (rule?.match(/BYDAY=([A-Z,]+)/)?.[1] || '').split(',').filter(Boolean);
+  const next = new Date(from);
+  for (let i = 0; i < 8; i++) {
+    next.setTime(next.getTime() + 24 * 60 * 60 * 1000);
+    if (days.length === 0) return next;
+    const local = new Date(next.getTime() - 3 * 60 * 60 * 1000);
+    if (days.includes(DAY_CODES[local.getUTCDay()])) return next;
+  }
+  return next;
+}
+
 export async function initializeReminderWorker() {
   const reminderQueue = new Queue('reminders', { connection: getBullMQConnection() });
 
@@ -11,20 +26,22 @@ export async function initializeReminderWorker() {
       const pool = getDatabase();
 
       try {
-        await evolution.sendMessage(phone, message);
-
         const result = await pool.query(
-          'SELECT type, scheduled_for FROM reminders WHERE id = $1',
+          'SELECT type, scheduled_for, sent, recurrence_rule FROM reminders WHERE id = $1',
           [reminderId]
         );
         const reminder = result.rows[0];
+
+        // Cancelled (row deleted) or already delivered: don't send.
+        if (!reminder || reminder.sent) return;
+
+        await evolution.sendMessage(phone, message);
 
         if (reminder?.type === 'recurring') {
           // Reschedule the same reminder for the same time tomorrow instead
           // of letting it fire once and go silent - "todos os dias" has to
           // actually mean every day.
-          const nextScheduledFor = new Date(reminder.scheduled_for);
-          nextScheduledFor.setDate(nextScheduledFor.getDate() + 1);
+          const nextScheduledFor = nextOccurrence(new Date(reminder.scheduled_for), reminder.recurrence_rule);
 
           await pool.query(
             'UPDATE reminders SET scheduled_for = $1, sent = false WHERE id = $2',

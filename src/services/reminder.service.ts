@@ -17,7 +17,8 @@ export class ReminderService {
     phone: string,
     scheduledFor: Date,
     message: string,
-    isRecurring: boolean = false
+    isRecurring: boolean = false,
+    recurrenceRule: string | null = null
   ): Promise<Reminder> {
     const pool = getDatabase();
 
@@ -28,7 +29,7 @@ export class ReminderService {
         isRecurring ? 'recurring' : 'one_time',
         scheduledFor,
         message,
-        isRecurring ? `FREQ=DAILY;BYHOUR=${scheduledFor.getHours()}` : null
+        isRecurring ? (recurrenceRule || 'FREQ=DAILY') : null
       ]
     );
 
@@ -74,6 +75,16 @@ export class ReminderService {
     );
 
     return result.rows;
+  }
+
+  /** Cancels a pending reminder owned by this phone. The worker skips jobs whose row is gone or already sent. */
+  async cancelReminder(phone: string, id: string): Promise<boolean> {
+    const pool = getDatabase();
+    const result = await pool.query(
+      'DELETE FROM reminders WHERE id = $1 AND phone_number = $2 AND sent = false',
+      [id, phone]
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 
   async initializeWorker(): Promise<void> {

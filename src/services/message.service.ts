@@ -1,4 +1,5 @@
 import { ClaudeService, ConversationTurn } from './claude.service.js';
+import { AgentService } from './agent.service.js';
 import { WhitelistService } from './whitelist.service.js';
 import { ExpenseService } from './expense.service.js';
 import { ReminderService } from './reminder.service.js';
@@ -76,6 +77,7 @@ function detectYesNo(text: string): 'yes' | 'no' | 'unclear' {
 
 export class MessageService {
   private claudeService = new ClaudeService();
+  private agent = new AgentService(this.claudeService);
   private whitelistService = new WhitelistService();
   private expenseService = new ExpenseService();
   private reminderService = new ReminderService();
@@ -465,50 +467,12 @@ export class MessageService {
         name: userName,
       });
 
-      // 6. Detect intent
-      const intent = await this.claudeService.detectIntent(messageText, phone);
-
-      // Short-term memory: last few turns, so the conversation actually
-      // flows instead of restarting from zero on every single message.
-      const history = await this.getRecentHistory(phone);
-
-      let response: string;
-
-      if (intent === 'expense_log') {
-        const parsed = await this.claudeService.parseExpense(messageText, phone);
-        await this.expenseService.logExpense(phone, parsed.amount, parsed.description);
-        const today = await this.expenseService.getTodayTotal(phone);
-
-        response = `✓ Anotei: R$${parsed.amount.toFixed(2)} em ${parsed.description}\n`;
-        response += `Hoje você já registrou ${today.count} despesa${today.count !== 1 ? 's' : ''}, totalizando R$${today.total.toFixed(2)}.`;
-        response = withFollowUp(response);
-      } else if (intent === 'expense_query') {
-        const expenses = await this.expenseService.getRecentExpenses(phone, 7);
-        response = await this.claudeService.formatExpenseQuery(expenses, messageText, phone, systemPrompt, history);
-      } else if (intent === 'reminder_query') {
-        const reminders = await this.reminderService.getUpcomingReminders(phone);
-        response = await this.claudeService.answerReminderQuery(reminders, messageText, phone, systemPrompt, history);
-      } else if (intent === 'reminder_set') {
-        try {
-          const parsed = await this.claudeService.parseReminder(messageText, phone);
-          const scheduledFor = new Date(parsed.scheduledFor);
-          await this.reminderService.scheduleReminder(phone, scheduledFor, parsed.message, parsed.isRecurring);
-
-          response = await this.claudeService.confirmReminder(
-            parsed.message,
-            formatDateTime(scheduledFor),
-            parsed.isRecurring,
-            systemPrompt,
-            phone,
-            history
-          );
-        } catch (err) {
-          console.error('Reminder parsing failed:', err);
-          response = 'Não consegui entender direito a data do lembrete. Pode tentar de novo? Ex: "lembrar de pagar conta amanhã às 10h" 😊';
-        }
-      } else {
-        response = await this.claudeService.answerGeneralQuestion(messageText, phone, systemPrompt, history);
-      }
+      // 6. Conversational agent: full recent history + tools (reminders,
+      // expenses, weather). Claude decides what to do instead of a
+      // context-free intent classifier per message.
+      const history = await this.getRecentHistory(phone, 20);
+      const { text: response, toolsUsed } = await this.agent.respond(phone, messageText, systemPrompt, history);
+      const intent = toolsUsed.length ? `agent:${[...new Set(toolsUsed)].join(',')}` : 'agent:chat';
 
       return this.sendAndLog(phone, messageText, intent, response);
     } catch (error) {

@@ -332,7 +332,7 @@ Responda APENAS com JSON, sem texto antes ou depois:
     return response.data.content[0].text.trim();
   }
 
-  private async logTokenUsage(phone: string, tokensConsumed: number, context: string): Promise<void> {
+  async logTokenUsage(phone: string, tokensConsumed: number, context: string): Promise<void> {
     const pool = getDatabase();
     await pool.query(
       'INSERT INTO token_usage (phone_number, tokens_consumed, context) VALUES ($1, $2, $3)',
